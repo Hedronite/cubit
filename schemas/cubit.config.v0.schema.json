@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Hedronite/cubit/schemas/cubit.config.v0.schema.json",
+  "title": "cubit.config/v0",
+  "description": "Cubit configuration. Decoded strictly: an unknown key is an error. No environment overrides. This schema is the shape contract; cross-field checks (duplicate aliases, nested or overlapping roots, roots inside a refused prefix, two roots resolving to one real path, textfile directory filesystem) live in `cubit validate` and are listed in docs/config.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "roots"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "cubit.config/v0"
+    },
+    "host": {
+      "description": "Slug that appears in cubit.scan/v0 only. Never read from the OS hostname. There is no host metric label.",
+      "$ref": "#/$defs/alias"
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interval": {
+          "description": "Time between scans in `serve`. Default 5m, plus or minus 10% jitter. `validate` rejects values under 30s.",
+          "$ref": "#/$defs/duration"
+        },
+        "max_workers": {
+          "description": "Concurrent walkers. Default min(4, GOMAXPROCS).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      }
+    },
+    "refuse": {
+      "description": "Additions to the built-in refuse list (docs/refuse-list.md). The built-in entries cannot be removed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vault": {
+          "description": "A vault prefix to refuse. Reported by alias only, never by path.",
+          "$ref": "#/$defs/path"
+        },
+        "extra": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        }
+      }
+    },
+    "roots": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/root"
+      }
+    }
+  },
+  "$defs": {
+    "alias": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "duration": {
+      "description": "Go-style duration made of integer parts, for example 30s, 5m, 1h30m.",
+      "type": "string",
+      "pattern": "^([0-9]+(ms|s|m|h))+$"
+    },
+    "path": {
+      "description": "Absolute, or relative to the invoking user's home as `~/...`.",
+      "type": "string",
+      "pattern": "^(/|~/).+$",
+      "maxLength": 1024
+    },
+    "root": {
+      "type": "object",
+      "required": [
+        "alias",
+        "path",
+        "mode"
+      ],
+      "properties": {
+        "alias": {
+          "description": "Appears as the `root` label and in every report. A slug, never a path. Unique across roots.",
+          "$ref": "#/$defs/alias"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "mode": {
+          "enum": [
+            "workspace-root",
+            "target-dir",
+            "cargo-home",
+            "sccache"
+          ]
+        },
+        "max_files": {
+          "description": "Per-root cap on directory entries read in one scan (each entry counts once; a stat of it is not a second count). Default 2000000 (provisional, calibrated at C1a).",
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 100000000
+        },
+        "max_duration": {
+          "description": "Per-root wall-time cap for one scan, in the grammar above (no fractions, no us or ns). Default 30s (provisional, calibrated at C1a). `validate` rejects a value at or above scan.interval. The scan document reports it as max_duration_seconds.",
+          "$ref": "#/$defs/duration"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "const": "workspace-root"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "discovery_depth": {
+                "description": "How deep below the root to look for workspaces (a directory with both Cargo.toml and target/). Default 3.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6
+              },
+              "max_workspaces": {
+                "description": "Labelled workspaces per root, largest first, ties by name. Default 64.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 256
+              },
+              "names": {
+                "description": "Relative path under the root, exactly as found on disk, to a short slug. A declared name wins over the derived label. Keys may not hold `..` or `.` components, a leading or trailing `/`, a backslash or NUL.",
+                "type": "object",
+                "maxProperties": 256,
+                "propertyNames": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^[^/\\\\\\x00]+(/[^/\\\\\\x00]+)*$",
+                  "not": {
+                    "pattern": "(^|/)\\.\\.?(/|$)"
+                  }
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/slug"
+                }
+              },
+              "profiles": {
+                "description": "Emit the per-profile breakdown. Default true.",
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "const": "target-dir"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "description": "The workspace name for this one target dir. Defaults to the root alias.",
+                "$ref": "#/$defs/slug"
+              },
+              "profiles": {
+                "description": "Emit the per-profile breakdown. Default true.",
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}
