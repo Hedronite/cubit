@@ -122,3 +122,92 @@ tests:
               reason: dedupe_overflow
             exp_annotations:
               summary: "Cubit sizes for root example-projects may over-count hardlinks"
+
+  # A root that stays partial still alerts on growth: its numbers are lower bounds
+  # all the way through, so they compare fairly. CubitScanPartial flags the state.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli"}'
+        values: '0+1e9x40'
+      - series: 'cubit_root_bytes{root="example-projects"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              workspace: app-cli
+            exp_annotations:
+              summary: "Workspace app-cli in example-projects grew by more than 5 GB in 24h"
+      - eval_time: 30h
+        alertname: CubitRootGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+            exp_annotations:
+              summary: "Root example-projects grew by more than 20 GB in 24h"
+
+  # Root aliases are per host. Instance a flips to partial and is muted; instance b
+  # has the same alias, stays complete and still alerts. Neither mutes the other.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli",instance="a"}'
+        values: '0+1e9x40'
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli",instance="b"}'
+        values: '0+1e9x40'
+      - series: 'cubit_root_bytes{root="example-projects",instance="a"}'
+        values: '0+1e9x40'
+      - series: 'cubit_root_bytes{root="example-projects",instance="b"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects",instance="a"}'
+        values: '0x10 1 0x30'
+      - series: 'cubit_scan_partial{root="example-projects",instance="b"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              workspace: app-cli
+              instance: b
+            exp_annotations:
+              summary: "Workspace app-cli in example-projects grew by more than 5 GB in 24h"
+      - eval_time: 30h
+        alertname: CubitRootGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              instance: b
+            exp_annotations:
+              summary: "Root example-projects grew by more than 20 GB in 24h"
+
+  # And the reverse: instance a is the steady one, so only b (which flipped) is muted.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli",instance="a"}'
+        values: '0+1e9x40'
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli",instance="b"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects",instance="a"}'
+        values: '0x40'
+      - series: 'cubit_scan_partial{root="example-projects",instance="b"}'
+        values: '0x10 1 0x30'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              workspace: app-cli
+              instance: a
+            exp_annotations:
+              summary: "Workspace app-cli in example-projects grew by more than 5 GB in 24h"

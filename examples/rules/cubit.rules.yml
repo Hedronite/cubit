@@ -8,12 +8,16 @@ groups:
   - name: cubit
     rules:
       # Disk growth, attributed. Fires per workspace so the alert names the culprit.
-      # A partial scan reports a lower bound, and the full scan after it looks like
-      # growth, so growth alerts stay quiet for 24h after any partial scan.
+      # A partial scan reports a lower bound, and a complete scan after it (or the
+      # reverse) looks like a jump, so growth alerts stay quiet for 24h after a
+      # root flips between complete and partial. A root that stays partial still
+      # alerts: lower bound against lower bound compares fairly, and CubitScanPartial
+      # already flags the steady state. Matching keeps `instance`, because root
+      # aliases are per host and one host's partial must not mute another's.
       - alert: CubitWorkspaceGrowth
         expr: |
           delta(cubit_workspace_target_bytes[24h]) > 5e9
-          and on (root) max_over_time(cubit_scan_partial[24h]) == 0
+          and ignoring (workspace) changes(cubit_scan_partial[24h]) == 0
         for: 30m
         labels:
           severity: warning
@@ -25,7 +29,7 @@ groups:
       - alert: CubitRootGrowth
         expr: |
           delta(cubit_root_bytes[24h]) > 20e9
-          and on (root) max_over_time(cubit_scan_partial[24h]) == 0
+          and changes(cubit_scan_partial[24h]) == 0
         for: 30m
         labels:
           severity: warning
