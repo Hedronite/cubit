@@ -4,8 +4,9 @@
 #
 # Usage: scripts/scrub.sh
 # Optional: CUBIT_SCRUB_EXTRA is an extended regex (case-insensitive) of further
-# strings to refuse, for example host or people names. Keep that value in the
-# CI settings, never in the tree.
+# strings to refuse, for example host or people names. Keep that value in a
+# repository secret (masked in CI logs), never in the tree and never in a
+# repository variable.
 #
 # Portable to the bash and grep that ship with macOS and with Linux runners.
 set -euo pipefail
