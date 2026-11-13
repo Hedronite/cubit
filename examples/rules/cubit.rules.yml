@@ -1,0 +1,69 @@
+# Example Prometheus alerting rules for Cubit. Synthetic: copy and adapt.
+#
+# Cubit measures and judges nothing. Thresholds belong here, in Prometheus.
+# Every rule carries severity "warning": anything built on Cubit is a YELLOW
+# signal and never a page. Match the label vocabulary of your own rule files
+# before deploying.
+groups:
+  - name: cubit
+    rules:
+      # Disk growth, attributed. Fires per workspace so the alert names the culprit.
+      # A partial scan reports a lower bound, and the full scan after it looks like
+      # growth, so growth alerts stay quiet for 24h after any partial scan.
+      - alert: CubitWorkspaceGrowth
+        expr: |
+          delta(cubit_workspace_target_bytes[24h]) > 5e9
+          and on (root) max_over_time(cubit_scan_partial[24h]) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Workspace {{ $labels.workspace }} in {{ $labels.root }} grew by more than 5 GB in 24h"
+
+      # The same, for a whole root. Catches growth that is spread across
+      # workspaces or sits in the unlabeled overflow.
+      - alert: CubitRootGrowth
+        expr: |
+          delta(cubit_root_bytes[24h]) > 20e9
+          and on (root) max_over_time(cubit_scan_partial[24h]) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root {{ $labels.root }} grew by more than 20 GB in 24h"
+
+      # A root that has stopped measuring. The size gauges keep their last good
+      # values, so this is the only thing that says they are stale.
+      - alert: CubitScanFailing
+        expr: cubit_scan_success == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cubit cannot measure root {{ $labels.root }}; sizes are the last good values"
+
+      - alert: CubitScanStale
+        expr: time() - cubit_scan_last_success_timestamp_seconds > 3600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cubit has not measured root {{ $labels.root }} for over an hour"
+
+      # Some bytes are not being measured (a cap, or an unreadable subtree), so every size is a lower bound.
+      - alert: CubitScanPartial
+        expr: cubit_scan_partial == 1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cubit scans of root {{ $labels.root }} are partial: a cap or an unreadable subtree; see cubit_scan_errors_total"
+
+      # The hardlink set filled, so later hardlinks may be counted twice.
+      - alert: CubitDedupeOverflow
+        expr: cubit_skipped_entries{reason="dedupe_overflow"} > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cubit sizes for root {{ $labels.root }} may over-count hardlinks"
