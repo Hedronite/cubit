@@ -1,0 +1,124 @@
+# Unit tests for cubit.rules.yml. Run: promtool test rules examples/rules/cubit.rules.test.yml
+rule_files:
+  - cubit.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # 1 GB per hour is 24 GB a day: the workspace and the root both cross their lines.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli"}'
+        values: '0+1e9x40'
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="libs-core"}'
+        values: '5e9+0x40'
+      - series: 'cubit_root_bytes{root="example-projects"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts: []
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              workspace: app-cli
+            exp_annotations:
+              summary: "Workspace app-cli in example-projects grew by more than 5 GB in 24h"
+      - eval_time: 30h
+        alertname: CubitRootGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+            exp_annotations:
+              summary: "Root example-projects grew by more than 20 GB in 24h"
+
+  # A root that fails for longer than 15m, and a scan that has gone quiet.
+  - interval: 5m
+    input_series:
+      - series: 'cubit_scan_success{root="example-projects"}'
+        values: '1 1 1 0x30'
+      - series: 'cubit_scan_last_success_timestamp_seconds{root="example-projects"}'
+        values: '0x40'
+      - series: 'cubit_scan_partial{root="example-projects"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CubitScanFailing
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: CubitScanFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+            exp_annotations:
+              summary: "Cubit cannot measure root example-projects; sizes are the last good values"
+      - eval_time: 30m
+        alertname: CubitScanStale
+        exp_alerts: []
+      - eval_time: 130m
+        alertname: CubitScanStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+            exp_annotations:
+              summary: "Cubit has not measured root example-projects for over an hour"
+      - eval_time: 130m
+        alertname: CubitScanPartial
+        exp_alerts: []
+
+  # A scan that is cut short for over an hour.
+  - interval: 1m
+    input_series:
+      - series: 'cubit_scan_partial{root="example-projects"}'
+        values: '0 1x120'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: CubitScanPartial
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: CubitScanPartial
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+            exp_annotations:
+              summary: "Cubit scans of root example-projects are partial: a cap or an unreadable subtree; see cubit_scan_errors_total"
+
+  # A partial scan inside the window silences growth: the jump after it is not growth.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects"}'
+        values: '0x10 1 0x30'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts: []
+
+  # Hardlink dedupe overflowed for longer than 30m.
+  - interval: 1m
+    input_series:
+      - series: 'cubit_skipped_entries{root="example-projects",reason="dedupe_overflow"}'
+        values: '0 3x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CubitDedupeOverflow
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: CubitDedupeOverflow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              reason: dedupe_overflow
+            exp_annotations:
+              summary: "Cubit sizes for root example-projects may over-count hardlinks"
