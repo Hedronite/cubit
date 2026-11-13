@@ -1,0 +1,26 @@
+version: "2"
+
+run:
+  go: "1.26"
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gosec
+    - misspell
+    - nolintlint
+    - unconvert
+    - usestdlibvars
+  exclusions:
+    rules:
+      # Tests read fixtures by computed path.
+      - path: _test\.go
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
