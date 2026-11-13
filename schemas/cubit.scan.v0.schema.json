@@ -1,0 +1,515 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Hedronite/cubit/schemas/cubit.scan.v0.schema.json",
+  "title": "cubit.scan/v0",
+  "description": "The document `cubit scan --json` prints alone on stdout, and the single source the metrics are rendered from. Roots are sorted by alias, workspaces by name, caches by kind, skipped and warnings by reason. Aliases, slugs and closed enums only: no absolute filesystem path appears anywhere (`workspace` is a declared name or a sanitized relative path). Rules a schema cannot express, checked by tests from C1a: a workspace's profiles sum to its bytes; a root's bytes equal the labelled workspaces plus workspaces_unlabeled_bytes (workspace modes) or the sum of its caches (cache modes); skipped subtrees are counted nowhere in bytes. A one-shot scan has no memory, so a root that fails in `cubit scan` has no last-good values.",
+  "type": "object",
+  "required": [
+    "schema",
+    "generated_at",
+    "roots",
+    "caps",
+    "warnings"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "cubit.scan/v0"
+    },
+    "generated_at": {
+      "description": "RFC 3339, UTC, trailing Z.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "host": {
+      "description": "From config or flag. Never os.Hostname(). Omitted when unset.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+    },
+    "roots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/root"
+      }
+    },
+    "caps": {
+      "description": "Process-wide caps. Each root's own caps are in roots[].caps.",
+      "type": "object",
+      "required": [
+        "max_workers",
+        "depth_guard"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "max_workers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "depth_guard": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    }
+  },
+  "$defs": {
+    "alias": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+    },
+    "bytes": {
+      "description": "Allocated bytes (st_blocks * 512), base units.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "mode": {
+      "enum": [
+        "workspace-root",
+        "target-dir",
+        "cargo-home",
+        "sccache"
+      ]
+    },
+    "skipReason": {
+      "description": "Why a subtree or entry was skipped and counted. Closed enum, same values as the `reason` label of cubit_skipped_entries. Skips never count toward a root's bytes. permission_denied, io_error and depth_exceeded leave bytes unmeasured, so they also make the root partial; the others do not.",
+      "enum": [
+        "refused",
+        "symlink_escape",
+        "symlink_loop",
+        "permission_denied",
+        "foreign_device",
+        "duplicate_target",
+        "vanished",
+        "depth_exceeded",
+        "dedupe_overflow",
+        "io_error"
+      ]
+    },
+    "errorReason": {
+      "description": "Why a root failed or is partial. Closed enum, same values as the `reason` label of cubit_scan_errors_total. When several apply, the document shows the first in this order: root_missing, root_unreadable, deadline_exceeded, max_files_exceeded, subtree_unreadable (permission_denied, io_error or depth_exceeded skips). The counter increments for every reason that applied. A canceled scan publishes nothing, so it has no reason.",
+      "enum": [
+        "root_missing",
+        "root_unreadable",
+        "deadline_exceeded",
+        "max_files_exceeded",
+        "subtree_unreadable"
+      ]
+    },
+    "profiles": {
+      "type": "object",
+      "required": [
+        "debug",
+        "release",
+        "doc",
+        "incremental",
+        "other"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "debug": {
+          "$ref": "#/$defs/bytes"
+        },
+        "release": {
+          "$ref": "#/$defs/bytes"
+        },
+        "doc": {
+          "$ref": "#/$defs/bytes"
+        },
+        "incremental": {
+          "$ref": "#/$defs/bytes"
+        },
+        "other": {
+          "$ref": "#/$defs/bytes"
+        }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "required": [
+        "name",
+        "bytes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The workspace label: a declared name, or the sanitized relative path (lowercase, [a-z0-9._-] components joined by /, at most 64 bytes). Never absolute, never a . or .. component.",
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z0-9._-]+(/[a-z0-9._-]+)*$",
+          "not": {
+            "pattern": "(^|/)\\.\\.?(/|$)"
+          }
+        },
+        "bytes": {
+          "$ref": "#/$defs/bytes"
+        },
+        "profiles": {
+          "description": "Present exactly when the root's profiles_emitted is true. All five keys always appear, zeros included.",
+          "$ref": "#/$defs/profiles"
+        }
+      }
+    },
+    "cache": {
+      "type": "object",
+      "required": [
+        "kind",
+        "bytes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "registry-cache",
+            "registry-src",
+            "registry-index",
+            "git-db",
+            "git-checkouts",
+            "cargo-bin",
+            "sccache"
+          ]
+        },
+        "bytes": {
+          "$ref": "#/$defs/bytes"
+        }
+      }
+    },
+    "skipped": {
+      "type": "object",
+      "required": [
+        "reason",
+        "count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "$ref": "#/$defs/skipReason"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "warning": {
+      "description": "Alias, reason and count. Never a path. no_workspaces: a workspace-root found none. unmatched_name: that many `names` keys matched no workspace.",
+      "type": "object",
+      "required": [
+        "root",
+        "reason",
+        "count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/alias"
+        },
+        "reason": {
+          "$ref": "#/$defs/warningReason"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "root": {
+      "type": "object",
+      "required": [
+        "alias",
+        "mode",
+        "bytes",
+        "success",
+        "partial",
+        "duration_seconds",
+        "profiles_emitted",
+        "caps",
+        "workspaces",
+        "workspaces_found",
+        "workspaces_unlabeled",
+        "workspaces_unlabeled_bytes",
+        "caches",
+        "skipped"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "$ref": "#/$defs/alias"
+        },
+        "mode": {
+          "$ref": "#/$defs/mode"
+        },
+        "bytes": {
+          "$ref": "#/$defs/bytes"
+        },
+        "success": {
+          "description": "True when the scan produced a usable result, complete or partial. False means the root has no new values: the values here are the last good ones, or zero and empty if there never was a success (last_success_at absent).",
+          "type": "boolean"
+        },
+        "partial": {
+          "description": "True when some bytes under this root were not measured: a cap cut the scan short, or a subtree was unreadable. Every value is then a lower bound. Never true when success is false.",
+          "type": "boolean"
+        },
+        "error": {
+          "description": "Present when success is false or partial is true: the first applicable reason.",
+          "$ref": "#/$defs/errorReason"
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "caps": {
+          "type": "object",
+          "required": [
+            "max_files",
+            "max_duration_seconds"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "max_files": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_duration_seconds": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "description": "This root's own caps (max_duration_seconds is the config's max_duration). Process-wide caps are at the top level."
+        },
+        "workspaces": {
+          "description": "Labelled workspaces only, at most max_workspaces. Empty in cache modes.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/workspace"
+          }
+        },
+        "workspaces_found": {
+          "description": "Every workspace found, labelled or not. The metric is cubit_workspaces.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "workspaces_unlabeled": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "workspaces_unlabeled_bytes": {
+          "$ref": "#/$defs/bytes"
+        },
+        "caches": {
+          "description": "Empty in workspace modes.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/cache"
+          }
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/skipped"
+          }
+        },
+        "last_success_at": {
+          "description": "RFC 3339 UTC time of the last scan with success true. Absent when there has never been one, in which case no size series is published.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+        },
+        "profiles_emitted": {
+          "description": "False when the root sets profiles: false, or is a cache mode. Then no workspace carries profiles.",
+          "type": "boolean"
+        },
+        "discovery_depth": {
+          "description": "The depth used to find workspaces. Present for workspace-root only.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "success": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "success"
+                ]
+              },
+              {
+                "properties": {
+                  "partial": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "partial"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "error"
+            ]
+          }
+        },
+        {
+          "description": "A cut-short scan with no usable result is success false, partial false.",
+          "not": {
+            "properties": {
+              "partial": {
+                "const": true
+              },
+              "success": {
+                "const": false
+              }
+            },
+            "required": [
+              "partial",
+              "success"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "success": {
+                "const": true
+              }
+            },
+            "required": [
+              "success"
+            ]
+          },
+          "then": {
+            "required": [
+              "last_success_at"
+            ]
+          }
+        },
+        {
+          "if": {
+            "allOf": [
+              {
+                "properties": {
+                  "success": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "success"
+                ]
+              },
+              {
+                "not": {
+                  "required": [
+                    "last_success_at"
+                  ]
+                }
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "bytes": {
+                "const": 0
+              },
+              "workspaces": {
+                "maxItems": 0
+              },
+              "caches": {
+                "maxItems": 0
+              },
+              "workspaces_found": {
+                "const": 0
+              },
+              "workspaces_unlabeled": {
+                "const": 0
+              },
+              "workspaces_unlabeled_bytes": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "workspace-root"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "discovery_depth"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "discovery_depth"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "profiles_emitted": {
+                "const": true
+              }
+            },
+            "required": [
+              "profiles_emitted"
+            ]
+          },
+          "then": {
+            "properties": {
+              "workspaces": {
+                "items": {
+                  "required": [
+                    "profiles"
+                  ]
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "workspaces": {
+                "items": {
+                  "not": {
+                    "required": [
+                      "profiles"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "warningReason": {
+      "description": "Conditions that no other field already reports. Skips and errors are not repeated here.",
+      "enum": [
+        "no_workspaces",
+        "unmatched_name"
+      ]
+    }
+  }
+}

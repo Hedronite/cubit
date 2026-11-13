@@ -1,0 +1,142 @@
+{
+  "schema": "cubit.scan/v0",
+  "generated_at": "2026-01-15T12:00:00Z",
+  "host": "build-example",
+  "roots": [
+    {
+      "alias": "example-cargo-home",
+      "mode": "cargo-home",
+      "bytes": 9000000000,
+      "success": true,
+      "partial": false,
+      "last_success_at": "2026-01-15T12:00:00Z",
+      "duration_seconds": 1.8,
+      "caps": {
+        "max_files": 2000000,
+        "max_duration_seconds": 30
+      },
+      "profiles_emitted": false,
+      "workspaces": [],
+      "workspaces_found": 0,
+      "workspaces_unlabeled": 0,
+      "workspaces_unlabeled_bytes": 0,
+      "caches": [
+        {
+          "kind": "cargo-bin",
+          "bytes": 500000000
+        },
+        {
+          "kind": "git-checkouts",
+          "bytes": 2000000000
+        },
+        {
+          "kind": "git-db",
+          "bytes": 3000000000
+        },
+        {
+          "kind": "registry-cache",
+          "bytes": 2500000000
+        },
+        {
+          "kind": "registry-index",
+          "bytes": 500000000
+        },
+        {
+          "kind": "registry-src",
+          "bytes": 500000000
+        }
+      ],
+      "skipped": [
+        {
+          "reason": "refused",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "alias": "example-projects",
+      "mode": "workspace-root",
+      "bytes": 42000000000,
+      "success": true,
+      "partial": true,
+      "error": "deadline_exceeded",
+      "last_success_at": "2026-01-15T12:00:00Z",
+      "duration_seconds": 30,
+      "caps": {
+        "max_files": 2000000,
+        "max_duration_seconds": 30
+      },
+      "discovery_depth": 3,
+      "profiles_emitted": true,
+      "workspaces": [
+        {
+          "name": "app-cli",
+          "bytes": 30000000000,
+          "profiles": {
+            "debug": 8000000000,
+            "release": 12000000000,
+            "doc": 1000000000,
+            "incremental": 9000000000,
+            "other": 0
+          }
+        },
+        {
+          "name": "libs/core",
+          "bytes": 11000000000,
+          "profiles": {
+            "debug": 6000000000,
+            "release": 0,
+            "doc": 0,
+            "incremental": 4500000000,
+            "other": 500000000
+          }
+        }
+      ],
+      "workspaces_found": 3,
+      "workspaces_unlabeled": 1,
+      "workspaces_unlabeled_bytes": 1000000000,
+      "caches": [],
+      "skipped": [
+        {
+          "reason": "permission_denied",
+          "count": 2
+        },
+        {
+          "reason": "vanished",
+          "count": 14
+        }
+      ]
+    },
+    {
+      "alias": "example-shared-target",
+      "mode": "target-dir",
+      "bytes": 0,
+      "success": false,
+      "partial": false,
+      "error": "root_missing",
+      "duration_seconds": 0.01,
+      "caps": {
+        "max_files": 2000000,
+        "max_duration_seconds": 30
+      },
+      "profiles_emitted": false,
+      "workspaces": [],
+      "workspaces_found": 0,
+      "workspaces_unlabeled": 0,
+      "workspaces_unlabeled_bytes": 0,
+      "caches": [],
+      "skipped": []
+    }
+  ],
+  "caps": {
+    "max_workers": 4,
+    "depth_guard": 64
+  },
+  "warnings": [
+    {
+      "root": "example-projects",
+      "reason": "unmatched_name",
+      "count": 1
+    }
+  ]
+}

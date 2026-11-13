@@ -1,0 +1,42 @@
+# Example Cubit configuration. Every name and path here is synthetic.
+# Strictly decoded: an unknown key is an error. See docs/config.md.
+schema: cubit.config/v0
+host: build-example
+
+scan:
+  interval: 5m
+  max_workers: 4
+
+refuse:
+  # Added to the built-in refuse list (docs/refuse-list.md); never replaces it.
+  vault: ~/notes-vault
+  extra:
+    - ~/private-scratch
+
+roots:
+  # Children of this root are workspaces (a directory with Cargo.toml and target/).
+  - alias: example-projects
+    path: /srv/example/projects
+    mode: workspace-root
+    discovery_depth: 3
+    max_workspaces: 64
+    max_files: 2000000
+    max_duration: 30s
+    names:
+      app/cli: app-cli
+      libs/retired: old-core   # matches nothing today: a scan warns unmatched_name
+
+  # One shared CARGO_TARGET_DIR, reported as a single workspace.
+  - alias: example-shared-target
+    path: /srv/example/shared-target
+    mode: target-dir
+    name: shared
+
+  # Fixed cache areas under CARGO_HOME.
+  - alias: example-cargo-home
+    path: ~/.cargo
+    mode: cargo-home
+
+  - alias: example-sccache
+    path: ~/.cache/sccache
+    mode: sccache
