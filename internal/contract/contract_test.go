@@ -561,9 +561,9 @@ func TestEnumsMatchSchema(t *testing.T) {
 	sort.Strings(profiles)
 
 	for name, want := range map[string][]string{
-		"profile":      profiles,
-		"kind":         sorted(sch.Defs.Cache.Properties.Kind.Enum),
-		"skip_reason":  sorted(sch.Defs.SkipReason.Enum),
+		"profile":        profiles,
+		"kind":           sorted(sch.Defs.Cache.Properties.Kind.Enum),
+		"skip_reason":    sorted(sch.Defs.SkipReason.Enum),
 		"error_reason":   sorted(sch.Defs.ErrorReason.Enum),
 		"warning_reason": sorted(sch.Defs.WarningReason.Enum),
 	} {
