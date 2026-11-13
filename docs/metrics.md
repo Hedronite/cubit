@@ -60,4 +60,4 @@ Only `root` and `workspace` carry text from the operator. `root` is a config ali
 
 ## Alerting
 
-Cubit judges nothing. Thresholds live in Prometheus rules, and anything built on these metrics is YELLOW, never RED. See [`examples/rules/cubit.rules.yml`](../examples/rules/cubit.rules.yml). Growth alerts stay quiet for 24 hours after any partial scan, because a lower bound followed by a full scan looks like growth.
+Cubit judges nothing. Thresholds live in Prometheus rules, and anything built on these metrics is YELLOW, never RED. See [`examples/rules/cubit.rules.yml`](../examples/rules/cubit.rules.yml). Growth alerts stay quiet for 24 hours after a root flips between complete and partial, because a lower bound followed by a full scan looks like growth. A root that stays partial still alerts: its numbers are lower bounds all the way through, and `CubitScanPartial` flags the state.
