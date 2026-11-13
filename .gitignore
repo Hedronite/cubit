@@ -36,3 +36,9 @@ go.work.sum
 # Cubit build output
 /cubit
 /dist/
+
+# Tool archives fetched while running CI steps by hand
+/promtool
+/gitleaks
+/prometheus-*.tar.gz
+/gitleaks_*.tar.gz
