@@ -16,6 +16,10 @@ tests:
         values: '0+1e9x40'
       - series: 'cubit_scan_partial{root="example-projects"}'
         values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="deadline_exceeded"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="max_files_exceeded"}'
+        values: '0x40'
     alert_rule_test:
       - eval_time: 3h
         alertname: CubitWorkspaceGrowth
@@ -148,6 +152,10 @@ tests:
         values: '0+1e9x40'
       - series: 'cubit_scan_partial{root="example-projects"}'
         values: '0x10 1 0x30'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="deadline_exceeded"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="max_files_exceeded"}'
+        values: '0x40'
     alert_rule_test:
       - eval_time: 30h
         alertname: CubitWorkspaceGrowth
@@ -182,6 +190,10 @@ tests:
         values: '0+1e9x40'
       - series: 'cubit_scan_partial{root="example-projects"}'
         values: '1x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="deadline_exceeded"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="max_files_exceeded"}'
+        values: '0x40'
     alert_rule_test:
       - eval_time: 30h
         alertname: CubitWorkspaceGrowth
@@ -215,7 +227,15 @@ tests:
         values: '0+1e9x40'
       - series: 'cubit_scan_partial{root="example-projects",instance="a"}'
         values: '0x10 1 0x30'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="a",reason="deadline_exceeded"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="a",reason="max_files_exceeded"}'
+        values: '0x40'
       - series: 'cubit_scan_partial{root="example-projects",instance="b"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="b",reason="deadline_exceeded"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="b",reason="max_files_exceeded"}'
         values: '0x40'
     alert_rule_test:
       - eval_time: 30h
@@ -247,8 +267,16 @@ tests:
         values: '0+1e9x40'
       - series: 'cubit_scan_partial{root="example-projects",instance="a"}'
         values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="a",reason="deadline_exceeded"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="a",reason="max_files_exceeded"}'
+        values: '0x40'
       - series: 'cubit_scan_partial{root="example-projects",instance="b"}'
         values: '0x10 1 0x30'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="b",reason="deadline_exceeded"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="b",reason="max_files_exceeded"}'
+        values: '0x40'
     alert_rule_test:
       - eval_time: 30h
         alertname: CubitWorkspaceGrowth
@@ -258,5 +286,95 @@ tests:
               root: example-projects
               workspace: app-cli
               instance: a
+            exp_annotations:
+              summary: "Workspace app-cli in example-projects grew by more than 5 GB in 24h"
+
+  # A root truncated by a cap: bytes move with the cut, not with growth, and the
+  # deadline counter keeps climbing, so growth stays quiet.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli"}'
+        values: '0+1e9x40'
+      - series: 'cubit_root_bytes{root="example-projects"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects"}'
+        values: '1x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="deadline_exceeded"}'
+        values: '0+1x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="max_files_exceeded"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts: []
+      - eval_time: 30h
+        alertname: CubitRootGrowth
+        exp_alerts: []
+
+  # A root that is partial only because of one stable unreadable subtree: its
+  # errors counter climbs on subtree_unreadable, there is no cap hit, and real
+  # growth still alerts.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli"}'
+        values: '0+1e9x40'
+      - series: 'cubit_root_bytes{root="example-projects"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects"}'
+        values: '1x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="subtree_unreadable"}'
+        values: '0+1x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="deadline_exceeded"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="max_files_exceeded"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              workspace: app-cli
+            exp_annotations:
+              summary: "Workspace app-cli in example-projects grew by more than 5 GB in 24h"
+      - eval_time: 30h
+        alertname: CubitRootGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+            exp_annotations:
+              summary: "Root example-projects grew by more than 20 GB in 24h"
+
+  # One cap hit inside the window mutes growth for the window, per instance: the
+  # other instance, with no cap hit, still alerts.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli",instance="a"}'
+        values: '0+1e9x40'
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli",instance="b"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects",instance="a"}'
+        values: '1x40'
+      - series: 'cubit_scan_partial{root="example-projects",instance="b"}'
+        values: '1x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="a",reason="max_files_exceeded"}'
+        values: '0x20 1x20'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="a",reason="deadline_exceeded"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="b",reason="max_files_exceeded"}'
+        values: '0x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",instance="b",reason="deadline_exceeded"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              workspace: app-cli
+              instance: b
             exp_annotations:
               summary: "Workspace app-cli in example-projects grew by more than 5 GB in 24h"
