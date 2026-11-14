@@ -677,7 +677,7 @@ func TestHostAppearsOnlyWhenSet(t *testing.T) {
 
 func TestFromConfig(t *testing.T) {
 	d := tmp(t)
-	cfg, fs := config.Parse([]byte("schema: cubit.config/v0\nhost: h1\nscan: {max_workers: 2}\nroots:\n  - {alias: a, path: " + d + ", mode: workspace-root, discovery_depth: 2, profiles: false}\n  - {alias: t, path: ~/x, mode: target-dir, name: shared}\n"))
+	cfg, fs := config.Parse([]byte("apiVersion: cubit.config/v0\nhost: h1\nscan: {max_workers: 2}\nroots:\n  - {alias: a, path: " + d + ", mode: workspace-root, discovery_depth: 2, profiles: false}\n  - {alias: t, path: ~/x, mode: target-dir, name: shared}\n"))
 	if cfg == nil {
 		t.Fatalf("%+v", fs)
 	}

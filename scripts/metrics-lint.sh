@@ -23,7 +23,7 @@ head -c 30000 /dev/zero > "$work/ws/lib/target/release/blob"
 head -c 10000 /dev/zero > "$work/cargohome/bin/tool"
 
 cat > "$work/cubit.yaml" <<EOF
-schema: cubit.config/v0
+apiVersion: cubit.config/v0
 host: build-example
 scan: {interval: 60s}
 roots:

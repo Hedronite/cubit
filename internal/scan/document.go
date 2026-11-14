@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-// SchemaID is the value of the document's schema field.
-const SchemaID = "cubit.scan/v0"
+// APIVersion is the value of the document's apiVersion field.
+const APIVersion = "cubit.scan/v0"
 
 // Document is cubit.scan/v0. Field order is the order the JSON is written in.
 type Document struct {
-	Schema      string    `json:"schema"`
+	APIVersion  string    `json:"apiVersion"`
 	GeneratedAt string    `json:"generated_at"`
 	Host        string    `json:"host,omitempty"`
 	Roots       []Root    `json:"roots"`

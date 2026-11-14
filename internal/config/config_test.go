@@ -39,7 +39,7 @@ func TestExampleParses(t *testing.T) {
 }
 
 func TestDefaults(t *testing.T) {
-	cfg, fs := Parse([]byte("schema: cubit.config/v0\nroots:\n  - {alias: a, path: /srv/a, mode: workspace-root}\n  - {alias: b, path: /srv/b, mode: target-dir}\n  - {alias: c, path: /srv/c, mode: cargo-home}\n"))
+	cfg, fs := Parse([]byte("apiVersion: cubit.config/v0\nroots:\n  - {alias: a, path: /srv/a, mode: workspace-root}\n  - {alias: b, path: /srv/b, mode: target-dir}\n  - {alias: c, path: /srv/c, mode: cargo-home}\n"))
 	if cfg == nil {
 		t.Fatalf("%+v", fs)
 	}
@@ -59,25 +59,25 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestRejects(t *testing.T) {
-	good := "schema: cubit.config/v0\nroots:\n  - alias: a\n    path: /srv/a\n    mode: workspace-root\n"
+	good := "apiVersion: cubit.config/v0\nroots:\n  - alias: a\n    path: /srv/a\n    mode: workspace-root\n"
 	cases := map[string]struct{ doc, msg string }{
-		"unknown top-level key": {"schema: cubit.config/v0\nlisten: x\nroots:\n  - {alias: a, path: /a, mode: sccache}\n", "listen"},
+		"unknown top-level key": {"apiVersion: cubit.config/v0\nlisten: x\nroots:\n  - {alias: a, path: /a, mode: sccache}\n", "listen"},
 		"wrong schema":          {strings.Replace(good, "v0", "v1", 1), "cubit.config/v0"},
-		"no roots":              {"schema: cubit.config/v0\nroots: []\n", "roots"},
-		"missing mode":          {"schema: cubit.config/v0\nroots:\n  - {alias: a, path: /a}\n", "mode"},
+		"no roots":              {"apiVersion: cubit.config/v0\nroots: []\n", "roots"},
+		"missing mode":          {"apiVersion: cubit.config/v0\nroots:\n  - {alias: a, path: /a}\n", "mode"},
 		"bad alias":             {strings.Replace(good, "alias: a", "alias: A_b", 1), "alias"},
 		"relative path":         {strings.Replace(good, "/srv/a", "srv/a", 1), "path"},
-		"key from another mode": {"schema: cubit.config/v0\nroots:\n  - {alias: a, path: /a, mode: cargo-home, discovery_depth: 2}\n", "discovery_depth"},
+		"key from another mode": {"apiVersion: cubit.config/v0\nroots:\n  - {alias: a, path: /a, mode: cargo-home, discovery_depth: 2}\n", "discovery_depth"},
 		"depth over 6":          {strings.Replace(good, "mode: workspace-root", "mode: workspace-root\n    discovery_depth: 9", 1), "discovery_depth"},
 		"bad duration":          {strings.Replace(good, "mode: workspace-root", "mode: workspace-root\n    max_duration: 1.5h", 1), "max_duration"},
 		"names key with ..":     {strings.Replace(good, "mode: workspace-root", "mode: workspace-root\n    names:\n      a/../b: x", 1), "names"},
-		"anchor":                {"schema: cubit.config/v0\nroots:\n  - &r {alias: a, path: /a, mode: sccache}\n", "anchors"},
+		"anchor":                {"apiVersion: cubit.config/v0\nroots:\n  - &r {alias: a, path: /a, mode: sccache}\n", "anchors"},
 		"two documents":         {good + "---\n" + good, "more than one"},
 		"empty":                 {"", "empty"},
 		"not a mapping":         {"- a\n- b\n", ""},
-		"duplicate key":         {"schema: cubit.config/v0\nschema: cubit.config/v0\nroots: []\n", ""},
-		"non-string key":        {"schema: cubit.config/v0\n1: x\nroots:\n  - {alias: a, path: /a, mode: sccache}\n", ""},
-		"tab indent":            {"schema: cubit.config/v0\nroots:\n\t- x\n", ""},
+		"duplicate key":         {"apiVersion: cubit.config/v0\napiVersion: cubit.config/v0\nroots: []\n", ""},
+		"non-string key":        {"apiVersion: cubit.config/v0\n1: x\nroots:\n  - {alias: a, path: /a, mode: sccache}\n", ""},
+		"tab indent":            {"apiVersion: cubit.config/v0\nroots:\n\t- x\n", ""},
 	}
 	for name, c := range cases {
 		cfg, fs := Parse([]byte(c.doc))
@@ -100,7 +100,7 @@ func TestRejects(t *testing.T) {
 }
 
 func TestFindingsCarryLinesAndExcerpts(t *testing.T) {
-	doc := "schema: cubit.config/v0\nroots:\n  - alias: ok\n    path: /srv/ok\n    mode: sccache\n  - alias: Bad_Alias\n    path: /srv/b\n    mode: sccache\n  - alias: third\n    path: relative\n    mode: sccache\n"
+	doc := "apiVersion: cubit.config/v0\nroots:\n  - alias: ok\n    path: /srv/ok\n    mode: sccache\n  - alias: Bad_Alias\n    path: /srv/b\n    mode: sccache\n  - alias: third\n    path: relative\n    mode: sccache\n"
 	_, fs := Parse([]byte(doc))
 	if len(fs) != 2 {
 		t.Fatalf("both problems are reported at once: %+v", fs)
@@ -136,8 +136,8 @@ func TestParseDuration(t *testing.T) {
 func FuzzConfigDecode(f *testing.F) {
 	f.Add(readExampleF(f))
 	for _, s := range []string{
-		"", "{}", "schema: cubit.config/v0\nroots: []\n", "- a\n", "a: &x [*x]\n", "schema: cubit.config/v0\nroots:\n  - {alias: a, path: /a, mode: sccache}\n",
-		"schema: cubit.config/v0\nroots:\n  - alias: a\n    path: /a\n    mode: workspace-root\n    names: {x/y: z}\n    max_duration: 1h30m\n",
+		"", "{}", "apiVersion: cubit.config/v0\nroots: []\n", "- a\n", "a: &x [*x]\n", "apiVersion: cubit.config/v0\nroots:\n  - {alias: a, path: /a, mode: sccache}\n",
+		"apiVersion: cubit.config/v0\nroots:\n  - alias: a\n    path: /a\n    mode: workspace-root\n    names: {x/y: z}\n    max_duration: 1h30m\n",
 		"\x00\xff", strings.Repeat("a: [", 400),
 	} {
 		f.Add([]byte(s))

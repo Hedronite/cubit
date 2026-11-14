@@ -143,7 +143,7 @@ Prints document `cubit.validate/v0` (schema in `schemas/cubit.validate.v0.schema
 
 ```json
 {
-  "schema": "cubit.validate/v0",
+  "apiVersion": "cubit.validate/v0",
   "ok": false,
   "findings": [
     {

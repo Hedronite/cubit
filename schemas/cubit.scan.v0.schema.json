@@ -5,7 +5,7 @@
   "description": "The document `cubit scan --json` prints alone on stdout, and the single source the metrics are rendered from. Roots are sorted by alias, workspaces by name, caches by kind, skipped and warnings by reason. Aliases, slugs and closed enums only: no absolute filesystem path appears anywhere (`workspace` is a declared name or a sanitized relative path). Rules a schema cannot express, checked by tests from C1a: a workspace's profiles sum to its bytes; a root's bytes equal the labelled workspaces plus workspaces_unlabeled_bytes (workspace modes) or the sum of its caches (cache modes); skipped subtrees are counted nowhere in bytes. A one-shot scan has no memory, so a root that fails in `cubit scan` has no last-good values.",
   "type": "object",
   "required": [
-    "schema",
+    "apiVersion",
     "generated_at",
     "roots",
     "caps",
@@ -13,7 +13,7 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "schema": {
+    "apiVersion": {
       "const": "cubit.scan/v0"
     },
     "generated_at": {

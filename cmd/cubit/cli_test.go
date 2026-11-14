@@ -103,7 +103,7 @@ func writeCfg(t *testing.T, body string) string {
 
 func TestConfigErrorsAreExit4WithNothingOnStdout(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope.yaml")
-	bad := writeCfg(t, "schema: cubit.config/v0\nroots:\n  - alias: Bad_Alias\n    path: relative\n    mode: sccache\n  - alias: x\n    path: /srv/x\n    mode: nonsense\n")
+	bad := writeCfg(t, "apiVersion: cubit.config/v0\nroots:\n  - alias: Bad_Alias\n    path: relative\n    mode: sccache\n  - alias: x\n    path: /srv/x\n    mode: nonsense\n")
 	for _, cmd := range []string{"scan", "validate"} {
 		code, out, errOut := exec(t, cmd, "--config", missing)
 		if code != 4 || out != "" || !strings.Contains(errOut, "cannot read config") || !strings.Contains(errOut, "fix") && !strings.Contains(errOut, "examples/cubit.yaml") {
@@ -122,7 +122,7 @@ func TestConfigErrorsAreExit4WithNothingOnStdout(t *testing.T) {
 	// A refused root is exit 4 for scan, and nothing is scanned.
 	home, _ := os.UserHomeDir()
 	if home != "" {
-		cfg := writeCfg(t, "schema: cubit.config/v0\nroots:\n  - alias: x\n    path: "+home+"/.ssh/agents\n    mode: sccache\n")
+		cfg := writeCfg(t, "apiVersion: cubit.config/v0\nroots:\n  - alias: x\n    path: "+home+"/.ssh/agents\n    mode: sccache\n")
 		code, out, errOut := exec(t, "scan", "--config", cfg)
 		if code != 4 || out != "" || !strings.Contains(errOut, "refuse-list") {
 			t.Errorf("refused root: %d %q %q", code, out, errOut)
@@ -168,7 +168,7 @@ func TestScanJSONIsTheDocumentAloneAndExitCodesFollowTheContract(t *testing.T) {
 	}
 	sch := scanSchema(t)
 	for name, c := range cases {
-		cfg := writeCfg(t, "schema: cubit.config/v0\nroots:\n"+c.roots)
+		cfg := writeCfg(t, "apiVersion: cubit.config/v0\nroots:\n"+c.roots)
 		code, out, errOut := exec(t, "scan", "--json", "--config", cfg)
 		if code != c.want {
 			t.Errorf("%s: exit %d, want %d (stderr %q)", name, code, c.want, errOut)
@@ -185,7 +185,7 @@ func TestScanJSONIsTheDocumentAloneAndExitCodesFollowTheContract(t *testing.T) {
 		}
 	}
 	// The human table is the same numbers, and the warning lines stay out of the JSON.
-	cfg := writeCfg(t, "schema: cubit.config/v0\nroots:\n"+cases["mixed"].roots)
+	cfg := writeCfg(t, "apiVersion: cubit.config/v0\nroots:\n"+cases["mixed"].roots)
 	code, out, _ := exec(t, "scan", "--config", cfg)
 	if code != 1 || !strings.Contains(out, "ROOT") || !strings.Contains(out, "error:   q failed: root_missing; fix:") {
 		t.Errorf("table: exit %d\n%s", code, out)
@@ -197,7 +197,7 @@ func TestScanJSONIsTheDocumentAloneAndExitCodesFollowTheContract(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	d := t.TempDir()
-	ok := writeCfg(t, "schema: cubit.config/v0\nroots:\n  - {alias: p, path: "+d+", mode: workspace-root}\n")
+	ok := writeCfg(t, "apiVersion: cubit.config/v0\nroots:\n  - {alias: p, path: "+d+", mode: workspace-root}\n")
 	code, out, errOut := exec(t, "validate", "--config", ok)
 	if code != 0 || !strings.Contains(out, "mode workspace-root") || !strings.Contains(out, "ok, 1 root(s)") {
 		t.Errorf("exit %d\n%s%s", code, out, errOut)
@@ -210,7 +210,7 @@ func TestValidate(t *testing.T) {
 	if code != 0 || json.Unmarshal([]byte(out), &res) != nil || !res.OK {
 		t.Errorf("json: %d %s", code, out)
 	}
-	bad := writeCfg(t, "schema: cubit.config/v0\nroots:\n  - {alias: a, path: "+d+", mode: sccache}\n  - {alias: a, path: "+d+"x, mode: sccache}\n")
+	bad := writeCfg(t, "apiVersion: cubit.config/v0\nroots:\n  - {alias: a, path: "+d+", mode: sccache}\n  - {alias: a, path: "+d+"x, mode: sccache}\n")
 	code, out, _ = exec(t, "validate", "--json", "--config", bad)
 	if code != 4 || json.Unmarshal([]byte(out), &res) != nil || res.OK || len(res.Findings) == 0 {
 		t.Errorf("json on a bad config: %d %s", code, out)
@@ -231,7 +231,7 @@ func TestPanicIsExit6(t *testing.T) {
 
 func TestServeRefusesAWideBindWithExit5AndNoStdout(t *testing.T) {
 	d := t.TempDir()
-	cfg := writeCfg(t, "schema: cubit.config/v0\nroots:\n  - {alias: p, path: "+d+", mode: sccache}\n")
+	cfg := writeCfg(t, "apiVersion: cubit.config/v0\nroots:\n  - {alias: p, path: "+d+", mode: sccache}\n")
 	for addr, want := range map[string]string{
 		"0.0.0.0:9101": "is not a loopback address; pass --unsafe-listen",
 		":9101":        "has no host and would bind every interface",
@@ -306,10 +306,10 @@ func TestValidateJSONIsTheDocumentOfItsSchema(t *testing.T) {
 		cfg  string
 		code int
 	}{
-		"ok":     {"schema: cubit.config/v0\nroots:\n  - {alias: p, path: " + d + ", mode: sccache}\n", 0},
-		"errors": {"schema: cubit.config/v0\nroots:\n  - {alias: P, path: rel, mode: nope}\n", 4},
-		"yaml":   {"schema: cubit.config/v0\nroots:\n\t- x\n", 4},
-		"cross":  {"schema: cubit.config/v0\nroots:\n  - {alias: a, path: " + d + ", mode: sccache}\n  - {alias: a, path: " + d + "/x, mode: sccache}\n", 4},
+		"ok":     {"apiVersion: cubit.config/v0\nroots:\n  - {alias: p, path: " + d + ", mode: sccache}\n", 0},
+		"errors": {"apiVersion: cubit.config/v0\nroots:\n  - {alias: P, path: rel, mode: nope}\n", 4},
+		"yaml":   {"apiVersion: cubit.config/v0\nroots:\n\t- x\n", 4},
+		"cross":  {"apiVersion: cubit.config/v0\nroots:\n  - {alias: a, path: " + d + ", mode: sccache}\n  - {alias: a, path: " + d + "/x, mode: sccache}\n", 4},
 	}
 	for name, c := range cases {
 		code, out, _ := exec(t, "validate", "--json", "--config", writeCfg(t, c.cfg))
@@ -323,7 +323,7 @@ func TestValidateJSONIsTheDocumentOfItsSchema(t *testing.T) {
 		if err := sch.Validate(inst); err != nil {
 			t.Errorf("%s: output violates cubit.validate/v0: %v\n%s", name, err, out)
 		}
-		if !strings.Contains(out, `"schema": "cubit.validate/v0"`) {
+		if !strings.Contains(out, `"apiVersion": "cubit.validate/v0"`) {
 			t.Errorf("%s: no schema field", name)
 		}
 	}
@@ -335,14 +335,14 @@ func tfConfig(t *testing.T) (cfg, tree string) {
 	os.MkdirAll(filepath.Join(tree, "app", "target", "debug"), 0o755)
 	os.WriteFile(filepath.Join(tree, "app", "Cargo.toml"), []byte("x"), 0o644)
 	os.WriteFile(filepath.Join(tree, "app", "target", "debug", "f"), make([]byte, 50000), 0o644)
-	return writeCfg(t, "schema: cubit.config/v0\nroots:\n  - {alias: p, path: "+tree+", mode: workspace-root}\n  - {alias: gone, path: "+tree+"-missing, mode: sccache}\n"), tree
+	return writeCfg(t, "apiVersion: cubit.config/v0\nroots:\n  - {alias: p, path: "+tree+", mode: workspace-root}\n  - {alias: gone, path: "+tree+"-missing, mode: sccache}\n"), tree
 }
 
 func TestScanWritesTheTextfileAndStillPrintsTheDocument(t *testing.T) {
 	cfg, tree := tfConfig(t)
 	dir := t.TempDir()
 	code, out, errOut := exec(t, "scan", "--json", "--config", cfg, "--textfile-dir", dir)
-	if code != 1 || !strings.Contains(out, `"schema": "cubit.scan/v0"`) {
+	if code != 1 || !strings.Contains(out, `"apiVersion": "cubit.scan/v0"`) {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
 	b, err := os.ReadFile(filepath.Join(dir, "cubit.prom"))
@@ -434,7 +434,7 @@ func TestAWriteFailureAfterTheScanIsExit7WithTheDocument(t *testing.T) {
 	if code != 7 {
 		t.Errorf("exit %d, want 7 (not 6, which means a bug)", code)
 	}
-	if !strings.Contains(out, `"schema": "cubit.scan/v0"`) || !strings.HasSuffix(out, "}\n") {
+	if !strings.Contains(out, `"apiVersion": "cubit.scan/v0"`) || !strings.HasSuffix(out, "}\n") {
 		t.Errorf("the document must be whole on stdout:\n%s", out)
 	}
 	if !strings.Contains(errOut, "cubit: failed to write cubit.prom in "+dir+": ") || !strings.Contains(errOut, "the scan result is still valid") {
@@ -444,7 +444,7 @@ func TestAWriteFailureAfterTheScanIsExit7WithTheDocument(t *testing.T) {
 
 func TestServeTextfilePreflightIsExit5(t *testing.T) {
 	d := t.TempDir()
-	cfg := writeCfg(t, "schema: cubit.config/v0\nroots:\n  - {alias: p, path: "+d+", mode: sccache}\n")
+	cfg := writeCfg(t, "apiVersion: cubit.config/v0\nroots:\n  - {alias: p, path: "+d+", mode: sccache}\n")
 	code, out, errOut := exec(t, "serve", "--config", cfg, "--textfile-dir", filepath.Join(d, "nope"), "--listen", "127.0.0.1:0")
 	if code != 5 || out != "" || !strings.Contains(errOut, "no such directory") || strings.Count(errOut, "\n") != 1 {
 		t.Errorf("%d %q %q", code, out, errOut)

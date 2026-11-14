@@ -246,9 +246,9 @@ docs/config.md.`,
 			switch {
 			case asJSON:
 				out := struct {
-					Schema   string           `json:"schema"`
-					OK       bool             `json:"ok"`
-					Findings []config.Finding `json:"findings"`
+					APIVersion string           `json:"apiVersion"`
+					OK         bool             `json:"ok"`
+					Findings   []config.Finding `json:"findings"`
 				}{"cubit.validate/v0", !bad, append([]config.Finding{}, fs...)}
 				b, _ := json.MarshalIndent(out, "", "  ")
 				fmt.Fprintf(stdout, "%s\n", b)

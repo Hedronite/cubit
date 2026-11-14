@@ -99,11 +99,11 @@ func Scan(ctx context.Context, spec Spec, env Env) (*Document, error) {
 	sort.SliceStable(roots, func(i, j int) bool { return roots[i].Alias < roots[j].Alias })
 
 	doc := &Document{
-		Schema:   SchemaID,
-		Host:     spec.Host,
-		Roots:    []Root{},
-		Warnings: []Warning{},
-		Caps:     DocCaps{MaxWorkers: spec.Workers, DepthGuard: spec.DepthGuard},
+		APIVersion: APIVersion,
+		Host:       spec.Host,
+		Roots:      []Root{},
+		Warnings:   []Warning{},
+		Caps:       DocCaps{MaxWorkers: spec.Workers, DepthGuard: spec.DepthGuard},
 	}
 	claimed := map[inode]bool{}
 	for _, rs := range roots {

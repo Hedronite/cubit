@@ -1,6 +1,6 @@
 # Example Cubit configuration. Every name and path here is synthetic.
 # Strictly decoded: an unknown key is an error. See docs/config.md.
-schema: cubit.config/v0
+apiVersion: cubit.config/v0
 host: build-example
 
 scan:

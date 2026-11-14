@@ -24,7 +24,7 @@ $ printf 'x' > "$root/libs-core/Cargo.toml"
 $ dd if=/dev/zero of="$root/app-cli/target/debug/blob" bs=64k count=1 status=none
 $ dd if=/dev/zero of="$root/libs-core/target/release/blob" bs=64k count=1 status=none
 $ cat > cubit.yaml <<EOF
-schema: cubit.config/v0
+apiVersion: cubit.config/v0
 host: build-example
 roots:
   - alias: example-projects

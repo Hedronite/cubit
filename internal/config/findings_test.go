@@ -21,7 +21,7 @@ func findOne(t *testing.T, doc string) Finding {
 	return fs[0]
 }
 
-const head = "schema: cubit.config/v0\nroots:\n"
+const head = "apiVersion: cubit.config/v0\nroots:\n"
 
 func TestFindingClasses(t *testing.T) {
 	root := func(extra string) string {
@@ -35,7 +35,7 @@ func TestFindingClasses(t *testing.T) {
 			"roots[0].alias 'Example_Projects': use lowercase letters, digits and '-'", "rename it to 'example-projects'.", 3},
 		{"path", head + "  - alias: a\n    path: relative/dir\n    mode: sccache\n", CodePathRelative,
 			"roots[0].path 'relative/dir': paths must be absolute or start with '~/'", "use an absolute path or '~/...'.", 4},
-		{"duration", "schema: cubit.config/v0\nscan:\n  interval: 5 min\nroots:\n  - {alias: a, path: /srv/a, mode: sccache}\n", CodeBadDuration,
+		{"duration", "apiVersion: cubit.config/v0\nscan:\n  interval: 5 min\nroots:\n  - {alias: a, path: /srv/a, mode: sccache}\n", CodeBadDuration,
 			"scan.interval '5 min' is not a duration", "write a duration like 30s, 5m, 1h30m", 3},
 		{"enum", head + "  - alias: a\n    path: /srv/a\n    mode: workspace-rot\n", CodeBadEnum,
 			"roots[0].mode 'workspace-rot' is not a mode", "'workspace-root' looks closest.", 5},
@@ -51,14 +51,14 @@ func TestFindingClasses(t *testing.T) {
 			"roots[0].max_file is not a key here", "did you mean 'max_files'?", 6},
 		{"unknown elsewhere", root("    max_workers: 4\n"), CodeUnknownKey,
 			"roots[0].max_workers is not a key here", "'max_workers' lives under scan:", 6},
-		{"unknown top", "schema: cubit.config/v0\nlisten: x\nroots:\n  - {alias: a, path: /srv/a, mode: sccache}\n", CodeUnknownKey,
+		{"unknown top", "apiVersion: cubit.config/v0\nlisten: x\nroots:\n  - {alias: a, path: /srv/a, mode: sccache}\n", CodeUnknownKey,
 			"listen is not a key here", "remove it.", 2},
 		{"names key", root("    names:\n      a/../b: x\n"), CodeNamesKey,
 			"not a usable relative path", "no '.' or '..' parts", 7},
-		{"yaml", "schema: cubit.config/v0\nroots:\n\t- x\n", CodeYAMLSyntax,
+		{"yaml", "apiVersion: cubit.config/v0\nroots:\n\t- x\n", CodeYAMLSyntax,
 			"this file is not valid YAML", "indent with spaces; YAML forbids tabs.", 3},
-		{"schema value", strings.Replace(head, "v0", "v9", 1) + "  - {alias: a, path: /srv/a, mode: sccache}\n", CodeBadSchema,
-			"schema must be 'cubit.config/v0'", "", 1},
+		{"apiVersion value", strings.Replace(head, "v0", "v9", 1) + "  - {alias: a, path: /srv/a, mode: sccache}\n", CodeBadAPIVersion,
+			"apiVersion must be 'cubit.config/v0'", "", 1},
 	}
 	for _, c := range cases {
 		f := findOne(t, c.doc)
@@ -146,8 +146,8 @@ func TestEveryFindingCarriesAListedCode(t *testing.T) {
 	os.MkdirAll(filepath.Join(d, "a", "inner"), 0o755)
 	os.MkdirAll(filepath.Join(d, ".ssh", "ws"), 0o755)
 	docs := []string{
-		"", "- a\n", "schema: cubit.config/v0\nroots: []\n", head + "  - {alias: A, path: rel, mode: nope}\n",
-		"schema: cubit.config/v0\nscan: {interval: 1h, max_workers: 99}\nroots:\n  - {alias: a, path: /a, mode: cargo-home, name: x, max_files: 1}\n",
+		"", "- a\n", "apiVersion: cubit.config/v0\nroots: []\n", head + "  - {alias: A, path: rel, mode: nope}\n",
+		"apiVersion: cubit.config/v0\nscan: {interval: 1h, max_workers: 99}\nroots:\n  - {alias: a, path: /a, mode: cargo-home, name: x, max_files: 1}\n",
 	}
 	for _, doc := range docs {
 		_, fs := Parse([]byte(doc))
@@ -187,5 +187,29 @@ func TestCodesMatchTheValidateSchema(t *testing.T) {
 	sort.Strings(have)
 	if !reflect.DeepEqual(want, have) {
 		t.Errorf("schema %v\ncode   %v", want, have)
+	}
+}
+
+// The version key is apiVersion. The old `schema` is an unknown key, and the
+// finding says what to write instead.
+func TestTheOldVersionKeyIsRejectedWithAHint(t *testing.T) {
+	cfg, fs := Parse([]byte("schema: cubit.config/v0\nroots:\n  - {alias: a, path: /srv/a, mode: sccache}\n"))
+	if cfg != nil {
+		t.Fatal("a document with only the old key must not decode")
+	}
+	var unknown, missing bool
+	for _, f := range fs {
+		if f.Code == CodeUnknownKey && f.Field == "schema" && strings.Contains(f.Fix, "apiVersion: cubit.config/v0") && f.Line == 1 {
+			unknown = true
+		}
+		if f.Code == CodeMissingKey && f.Field == "apiVersion" && strings.Contains(f.Fix, "apiVersion: cubit.config/v0") {
+			missing = true
+		}
+	}
+	if !unknown || !missing {
+		t.Errorf("unknown %v, missing %v: %+v", unknown, missing, fs)
+	}
+	if cfg, fs := Parse([]byte("apiVersion: cubit.config/v0\nschema: cubit.config/v0\nroots:\n  - {alias: a, path: /srv/a, mode: sccache}\n")); cfg != nil || len(fs) != 1 {
+		t.Errorf("both keys: the old one is still unknown: %+v", fs)
 	}
 }

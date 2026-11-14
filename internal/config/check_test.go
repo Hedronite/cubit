@@ -9,7 +9,7 @@ import (
 
 func cfgFor(t *testing.T, roots string) *Config {
 	t.Helper()
-	cfg, fs := Parse([]byte("schema: cubit.config/v0\n" + roots))
+	cfg, fs := Parse([]byte("apiVersion: cubit.config/v0\n" + roots))
 	if cfg == nil {
 		t.Fatalf("%+v", fs)
 	}

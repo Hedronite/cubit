@@ -1,5 +1,5 @@
 {
-  "schema": "cubit.validate/v0",
+  "apiVersion": "cubit.validate/v0",
   "ok": false,
   "findings": [
     {
