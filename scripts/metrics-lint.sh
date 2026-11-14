@@ -15,12 +15,12 @@ trap cleanup EXIT
 
 (cd "$root" && go build -o "$work/cubit" ./cmd/cubit)
 
-mkdir -p "$work/ws/app/target/debug" "$work/ws/lib/target/release" "$work/home/bin"
+mkdir -p "$work/ws/app/target/debug" "$work/ws/lib/target/release" "$work/cargohome/bin"
 : > "$work/ws/app/Cargo.toml"
 : > "$work/ws/lib/Cargo.toml"
 head -c 50000 /dev/zero > "$work/ws/app/target/debug/blob"
 head -c 30000 /dev/zero > "$work/ws/lib/target/release/blob"
-head -c 10000 /dev/zero > "$work/home/bin/tool"
+head -c 10000 /dev/zero > "$work/cargohome/bin/tool"
 
 cat > "$work/cubit.yaml" <<EOF
 schema: cubit.config/v0
@@ -28,7 +28,7 @@ host: build-example
 scan: {interval: 60s}
 roots:
   - {alias: example-projects, path: $work/ws, mode: workspace-root}
-  - {alias: example-cargo-home, path: $work/home, mode: cargo-home}
+  - {alias: example-cargo-home, path: $work/cargohome, mode: cargo-home}
   - {alias: example-missing, path: $work/missing, mode: sccache}
 EOF
 
