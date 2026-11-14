@@ -28,6 +28,7 @@ type rootState struct {
 	good        *scan.Root // the last scan with success true; nil before the first
 	lastSuccess time.Time
 	seen        bool // a scan of this root has finished
+	mode        string
 	duration    float64
 	success     bool
 	partial     bool
@@ -89,6 +90,7 @@ func (c *Collector) Update(doc *scan.Document, at time.Time) error {
 		r := doc.Roots[i]
 		st := c.state(r.Alias)
 		st.seen = true
+		st.mode = r.Mode
 		st.duration = r.DurationSeconds
 		st.success = r.Success
 		st.partial = r.Success && r.Partial
@@ -226,6 +228,7 @@ func (c *Collector) render(withCounters bool) (string, error) {
 		{name: "cubit_workspace_target_bytes", typ: "gauge", help: "Allocated bytes under one workspace's target/."},
 		{name: "cubit_workspace_profile_bytes", typ: "gauge", help: "Workspace bytes split by build profile."},
 		{name: "cubit_root_bytes", typ: "gauge", help: "All measured bytes in the root."},
+		{name: "cubit_root_info", typ: "gauge", help: "The mode of each configured root; always 1."},
 		{name: "cubit_cache_bytes", typ: "gauge", help: "Allocated bytes of one fixed cache area."},
 		{name: "cubit_workspaces", typ: "gauge", help: "Workspaces found, labelled or not."},
 		{name: "cubit_workspaces_unlabeled", typ: "gauge", help: "Workspaces beyond max_workspaces that got no label."},
@@ -279,6 +282,7 @@ func (c *Collector) render(withCounters bool) (string, error) {
 			}
 		}
 		if st.seen {
+			by["cubit_root_info"].add(join(root, label("mode", st.mode)), "1")
 			by["cubit_scan_duration_seconds"].add(root, ftoa(st.duration))
 			by["cubit_scan_success"].add(root, b01(st.success))
 			by["cubit_scan_partial"].add(root, b01(st.partial))

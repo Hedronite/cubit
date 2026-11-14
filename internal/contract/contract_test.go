@@ -435,11 +435,12 @@ func TestMetricTable(t *testing.T) {
 		"cubit_scan_success":         true,
 		"cubit_scan_partial":         true,
 		"cubit_build_info":           true,
+		"cubit_root_info":            true,
 	}
 	bannedSuffix := []string{"_kb", "_mb", "_gb", "_mib", "_gib", "_kib", "_ms", "_millis", "_percent", "_pct", "_ratio"}
 	allowedLabels := map[string]bool{
 		"root": true, "workspace": true, "profile": true, "kind": true,
-		"reason": true, "result": true, "version": true, "revision": true, "go_version": true,
+		"reason": true, "result": true, "mode": true, "version": true, "revision": true, "go_version": true,
 	}
 
 	seen := map[string]bool{}
@@ -539,6 +540,9 @@ func TestEnumsMatchSchema(t *testing.T) {
 			WarningReason struct {
 				Enum []any `json:"enum"`
 			} `json:"warningReason"`
+			Mode struct {
+				Enum []any `json:"enum"`
+			} `json:"mode"`
 			Profiles struct {
 				Properties map[string]any `json:"properties"`
 			} `json:"profiles"`
@@ -566,6 +570,7 @@ func TestEnumsMatchSchema(t *testing.T) {
 		"skip_reason":    sorted(sch.Defs.SkipReason.Enum),
 		"error_reason":   sorted(sch.Defs.ErrorReason.Enum),
 		"warning_reason": sorted(sch.Defs.WarningReason.Enum),
+		"mode":           sorted(sch.Defs.Mode.Enum),
 	} {
 		if got := docEnum(t, name); !same(got, want) {
 			t.Errorf("%s: docs/metrics.md has %v, the scan schema has %v", name, got, want)
