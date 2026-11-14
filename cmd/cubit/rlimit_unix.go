@@ -23,8 +23,10 @@ func raiseFileLimit() (soft uint64) {
 	}
 	if rl.Cur < want {
 		rl.Cur = want
-		if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rl); err != nil {
-			return rl.Cur
+		_ = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rl)
+		// Read it back: report the limit in force, not the one asked for.
+		if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rl); err != nil {
+			return 0
 		}
 	}
 	return rl.Cur

@@ -2,13 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
@@ -51,6 +54,7 @@ func TestHelpSnapshots(t *testing.T) {
 		"help-scan.golden":     {"scan", "--help"},
 		"help-validate.golden": {"validate", "--help"},
 		"help-version.golden":  {"version", "--help"},
+		"help-serve.golden":    {"serve", "--help"},
 	} {
 		code, out, errOut := exec(t, args...)
 		if code != 0 || errOut != "" {
@@ -223,12 +227,102 @@ func TestPanicIsExit6(t *testing.T) {
 	}
 }
 
-func TestServeIsNotInThisBuild(t *testing.T) {
-	code, out, errOut := exec(t, "serve")
-	if code != 5 || out != "" || !strings.Contains(errOut, "not in this build") {
-		t.Errorf("%d %q %q", code, out, errOut)
+func TestServeRefusesAWideBindWithExit5AndNoStdout(t *testing.T) {
+	d := t.TempDir()
+	cfg := writeCfg(t, "schema: cubit.config/v0\nroots:\n  - {alias: p, path: "+d+", mode: sccache}\n")
+	for addr, want := range map[string]string{
+		"0.0.0.0:9101": "is not a loopback address; pass --unsafe-listen",
+		":9101":        "has no host and would bind every interface",
+		"[::]:9101":    "binds every interface",
+	} {
+		code, out, errOut := exec(t, "serve", "--config", cfg, "--listen", addr)
+		if code != 5 || out != "" || !strings.Contains(errOut, "cubit: --listen "+addr) || !strings.Contains(errOut, want) || strings.Count(errOut, "\n") != 1 {
+			t.Errorf("%s: exit %d stdout %q stderr %q", addr, code, out, errOut)
+		}
 	}
-	if _, help, _ := exec(t, "--help"); strings.Contains(help, "serve") {
-		t.Error("serve is hidden until it exists")
+	code, _, errOut := exec(t, "serve", "--config", cfg, "--log-level", "loud")
+	if code != 3 || !strings.Contains(errOut, "--log-level") {
+		t.Errorf("bad level: %d %q", code, errOut)
+	}
+	code, out, _ := exec(t, "serve", "--config", filepath.Join(d, "missing.yaml"))
+	if code != 4 || out != "" {
+		t.Errorf("missing config: %d", code)
+	}
+}
+
+func TestServeHelpIsInTheRootHelp(t *testing.T) {
+	_, help, _ := exec(t, "--help")
+	if !strings.Contains(help, "serve") {
+		t.Error("serve is built, so it is listed")
+	}
+}
+
+func TestSignalExitCodes(t *testing.T) {
+	if exitForSignal(syscall.SIGINT) != 130 || exitForSignal(syscall.SIGTERM) != 143 {
+		t.Error("128 plus the signal number")
+	}
+}
+
+func TestWatchSignalsCancelsAndSaysWhich(t *testing.T) {
+	ctx, which, stop := watchSignals(context.Background())
+	defer stop()
+	if which() != nil {
+		t.Fatal("no signal yet")
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("the context was not canceled")
+	}
+	if which() != syscall.SIGTERM {
+		t.Errorf("which = %v", which())
+	}
+}
+
+func TestValidateJSONIsTheDocumentOfItsSchema(t *testing.T) {
+	d := t.TempDir()
+	var meta struct {
+		ID string `json:"$id"`
+	}
+	json.Unmarshal(schemas.Validate, &meta)
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemas.Validate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := jsonschema.NewCompiler()
+	if err := c.AddResource(meta.ID, doc); err != nil {
+		t.Fatal(err)
+	}
+	sch, err := c.Compile(meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]struct {
+		cfg  string
+		code int
+	}{
+		"ok":     {"schema: cubit.config/v0\nroots:\n  - {alias: p, path: " + d + ", mode: sccache}\n", 0},
+		"errors": {"schema: cubit.config/v0\nroots:\n  - {alias: P, path: rel, mode: nope}\n", 4},
+		"yaml":   {"schema: cubit.config/v0\nroots:\n\t- x\n", 4},
+		"cross":  {"schema: cubit.config/v0\nroots:\n  - {alias: a, path: " + d + ", mode: sccache}\n  - {alias: a, path: " + d + "/x, mode: sccache}\n", 4},
+	}
+	for name, c := range cases {
+		code, out, _ := exec(t, "validate", "--json", "--config", writeCfg(t, c.cfg))
+		if code != c.code {
+			t.Errorf("%s: exit %d, want %d", name, code, c.code)
+		}
+		inst, err := jsonschema.UnmarshalJSON(strings.NewReader(out))
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", name, err, out)
+		}
+		if err := sch.Validate(inst); err != nil {
+			t.Errorf("%s: output violates cubit.validate/v0: %v\n%s", name, err, out)
+		}
+		if !strings.Contains(out, `"schema": "cubit.validate/v0"`) {
+			t.Errorf("%s: no schema field", name)
+		}
 	}
 }

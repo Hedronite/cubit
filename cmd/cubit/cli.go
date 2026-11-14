@@ -6,15 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Hedronite/cubit/internal/config"
 	"github.com/Hedronite/cubit/internal/report"
 	"github.com/Hedronite/cubit/internal/scan"
+	"github.com/Hedronite/cubit/internal/serve"
 	"github.com/Hedronite/cubit/internal/version"
 )
 
@@ -61,7 +63,7 @@ Prometheus metrics. It measures; it never cleans.`,
 	root.AddCommand(scanCmd(&configFile, stdout, stderr))
 	root.AddCommand(validateCmd(&configFile, stdout, stderr))
 	root.AddCommand(versionCmd(stdout))
-	root.AddCommand(serveStub())
+	root.AddCommand(serveCmd(&configFile, stderr))
 	return root
 }
 
@@ -152,11 +154,14 @@ Human table by default; --json prints cubit.scan/v0 alone on stdout.`,
 			if err != nil {
 				return &exitError{exitConfig, err.Error()}
 			}
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			ctx, which, stop := watchSignals(context.Background())
 			defer stop()
 			doc, err := scan.Scan(ctx, spec, scan.Env{})
 			if err != nil {
-				return &exitError{exitInternal, "interrupted; no result"}
+				if sig := which(); sig != nil {
+					return &exitError{exitForSignal(sig), "interrupted"}
+				}
+				return &exitError{exitInternal, err.Error()}
 			}
 			if asJSON {
 				b, err := doc.JSON()
@@ -206,9 +211,10 @@ docs/config.md.`,
 			switch {
 			case asJSON:
 				out := struct {
+					Schema   string           `json:"schema"`
 					OK       bool             `json:"ok"`
 					Findings []config.Finding `json:"findings"`
-				}{!bad, append([]config.Finding{}, fs...)}
+				}{"cubit.validate/v0", !bad, append([]config.Finding{}, fs...)}
 				b, _ := json.MarshalIndent(out, "", "  ")
 				fmt.Fprintf(stdout, "%s\n", b)
 			case bad:
@@ -248,15 +254,72 @@ func versionCmd(stdout io.Writer) *cobra.Command {
 	return c
 }
 
-// serveStub keeps the command name reserved. serve arrives with C1b.
-func serveStub() *cobra.Command {
-	return &cobra.Command{
-		Use:    "serve",
-		Short:  "Run the exporter and serve /metrics",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(*cobra.Command, []string) error {
-			return &exitError{exitServe, "serve is not in this build yet"}
+func serveCmd(configFile *string, stderr io.Writer) *cobra.Command {
+	var listen, level string
+	var unsafe bool
+	c := &cobra.Command{
+		Use:   "serve",
+		Short: "Run the exporter and serve /metrics",
+		Long: `Run the exporter: serve /metrics and /healthz on --listen.
+
+/metrics serves the last finished scan and never walks on scrape;
+before the first scan finishes it serves build info and zero counters
+only. /healthz is 200 while the config is valid and the process is
+serving; it never touches the scanner. Scans run on an interval
+(default 5m), one in flight at a time.
+
+The metrics endpoint is unauthenticated. The bind address must be a
+loopback address; anything wider requires --unsafe-listen, which logs
+one warning with the bound address.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			lvl, err := parseLevel(level)
+			if err != nil {
+				return usageErr("%v", err)
+			}
+			cfg, _, err := load(*configFile, stderr, false)
+			if err != nil {
+				return err
+			}
+			spec, err := scan.FromConfig(cfg, home())
+			if err != nil {
+				return &exitError{exitConfig, err.Error()}
+			}
+			log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: lvl}))
+			spec.Log = log
+			ctx, _, stop := watchSignals(context.Background())
+			defer stop()
+			err = serve.Run(ctx, serve.Options{
+				Spec: spec, Interval: cfg.EffectiveInterval(), Addr: listen, Unsafe: unsafe,
+				ConfigName: filepath.Base(*configFile), Log: log, Info: version.Get(),
+			})
+			var refused *serve.RefusedError
+			var lerr *serve.ListenError
+			switch {
+			case err == nil:
+				return nil // a stop by signal is a clean shutdown
+			case errors.As(err, &refused), errors.As(err, &lerr):
+				return &exitError{exitServe, err.Error()}
+			}
+			return &exitError{exitInternal, err.Error()}
 		},
 	}
+	c.Flags().StringVar(&listen, "listen", "127.0.0.1:9101", "listen on `ADDR`")
+	c.Flags().BoolVar(&unsafe, "unsafe-listen", false, "allow a non-loopback bind (the metrics endpoint is unauthenticated)")
+	c.Flags().StringVar(&level, "log-level", "info", "log `LEVEL`: debug, info, warn or error")
+	return c
+}
+
+func parseLevel(s string) (slog.Level, error) {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug, nil
+	case "info":
+		return slog.LevelInfo, nil
+	case "warn":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	}
+	return 0, fmt.Errorf("--log-level %q is not one of debug, info, warn, error", s)
 }
