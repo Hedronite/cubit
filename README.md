@@ -16,7 +16,7 @@ Cubit is **not** a cleaner (it never deletes, prunes or runs `cargo clean`), not
 
 ## Install
 
-Take the archive for your platform from the [releases page](https://github.com/Hedronite/cubit/releases): `cubit_<version>_<os>_<arch>.tar.gz`, for `linux` or `darwin` on `amd64` or `arm64`. It holds the `cubit` binary, both licences and this README. Nothing is installed anywhere else, and the binary needs no runtime.
+Take the archive for your platform from the [releases page](https://github.com/Hedronite/cubit/releases): `cubit_<version>_<os>_<arch>.tar.gz`, for `linux` or `darwin` on `amd64` or `arm64`. It holds the `cubit` binary, both licences and this README. Nothing is installed anywhere else, and the binary is static: it has no runtime dependencies.
 
 ```sh
 tar -xzf cubit_0.1.0_linux_amd64.tar.gz
@@ -24,11 +24,13 @@ tar -xzf cubit_0.1.0_linux_amd64.tar.gz
 # cubit v0.1.0 (<commit>, go1.27.4)
 ```
 
+The archive unpacks to a directory named after itself, with the binary inside. Put the binary on your `PATH` (for example `install -m 0755 cubit_0.1.0_linux_amd64/cubit /usr/local/bin/cubit`), or run it as `./cubit_0.1.0_linux_amd64/cubit`; the examples below write plain `cubit`.
+
 To build from source instead you need Go 1.26 or later: `go build -o cubit ./cmd/cubit`. A build that is not a release prints `dev` as its version, never a made-up one.
 
 ### Verify a download
 
-Each release carries `SHA256SUMS`, a CycloneDX SBOM per binary, and GitHub build-provenance attestations. There is no signing key to trust: the attestation says which commit and which workflow run built the archive.
+Each release carries `SHA256SUMS`, a CycloneDX SBOM per binary, and GitHub build-provenance attestations. There is no signing key to trust: the attestation says which commit and which workflow run built the archive. **The attestation (step 2) is the trust anchor; the checksum (step 1) catches a truncated or corrupted download.** Steps 2 and 3 need the [GitHub CLI](https://cli.github.com/) (`gh`), signed in; step 1 needs only the two files.
 
 ```sh
 # 1. The checksum. SHA256SUMS lists every file of the build, including ones that
@@ -43,7 +45,13 @@ gh attestation verify cubit_0.1.0_linux_amd64.tar.gz --repo Hedronite/cubit \
   --predicate-type https://cyclonedx.org/bom
 ```
 
-The archives are reproducible: the same commit built with the same Go release gives the same bytes, on any machine. To check one yourself, install the Go release named in [`scripts/release.env`](scripts/release.env), check out the tag and run `scripts/release.sh v0.1.0`; `dist/SHA256SUMS` should match the published one. [docs/versions.md](docs/versions.md) lists every pinned tool and action.
+The archives are reproducible: the same commit built with the same Go release gives the same bytes, on any machine. To check them yourself, install the Go release named in [`scripts/release.env`](scripts/release.env), check out the tag and run `scripts/release.sh v0.1.0`, then compare the archive lines with the published `SHA256SUMS` (this one needs bash or zsh):
+
+```bash
+diff <(grep '\.tar\.gz$' dist/SHA256SUMS) <(grep '\.tar\.gz$' SHA256SUMS) && echo reproduced
+```
+
+Only the archive lines are comparable. The published `SHA256SUMS` is rewritten by the release workflow after it adds the SBOMs, so it also lists them, and an SBOM carries a serial number and a timestamp that differ on every run; your own `dist/SHA256SUMS` lists no SBOMs. [docs/versions.md](docs/versions.md) lists every pinned tool and action.
 
 ## Quickstart
 
@@ -77,7 +85,7 @@ $ cubit scan --config cubit.yaml --json    # cubit.scan/v0 on stdout
 
 Byte counts depend on filesystem block size; the output above is from a real run. `SIZE` is a rounded reading aid (base 1024); `BYTES` and the JSON carry the exact number. Every alias and path in this README is synthetic; real deployments name roots with slugs, never filesystem paths.
 
-For scripted use: `cubit scan --json` prints the `cubit.scan/v0` document alone on stdout (schema in [`schemas/cubit.scan.v0.schema.json`](schemas/cubit.scan.v0.schema.json)); `cubit validate --json` prints the `cubit.validate/v0` document. See [docs/cli.md](docs/cli.md) for every command and flag.
+For scripted use: `cubit scan --json` prints the `cubit.scan/v0` document alone on stdout (schema in [`schemas/cubit.scan.v0.schema.json`](schemas/cubit.scan.v0.schema.json)); `cubit validate --json` prints the `cubit.validate/v0` document. See [docs/cli.md](docs/cli.md) for every command and flag, and [docs/config.md](docs/config.md) for every config key and finding code.
 
 ### Exit codes
 
@@ -93,7 +101,7 @@ For scripted use: `cubit scan --json` prints the `cubit.scan/v0` document alone 
 | 7 | `scan --textfile-dir` could not write `cubit.prom` after the scan; the document is still printed |
 | 130, 143 | `scan` interrupted by SIGINT or SIGTERM |
 
-Codes 0 to 2 print the document on stdout; codes 3 and up do not. `serve` exits 0 on SIGINT or SIGTERM.
+Codes 0 to 2 print the document on stdout; codes 3 to 6 do not. Code 7 prints the document first, then reports the failed write on stderr. `serve` exits 0 on SIGINT or SIGTERM because a stopped exporter is not an error; an interrupted `scan` never produced a result, so it exits 130 or 143.
 
 ## Serve or cron
 
@@ -121,6 +129,8 @@ $ curl -s http://127.0.0.1:9101/metrics | head -4
 # TYPE cubit_build_info gauge
 cubit_build_info{version="dev",revision="f70cb66",go_version="go1.27.4"} 1
 ```
+
+That sample is from a source build, which says `dev`; a release shows its tag here, for example `version="v0.1.0"`.
 
 Point a local Prometheus at it (synthetic names; scrape from the same host or over a private network only):
 
@@ -153,7 +163,7 @@ Full table, label enums and semantics: [docs/metrics.md](docs/metrics.md). Value
 
 ## Alerting
 
-Cubit judges nothing. [`examples/rules/`](examples/rules/) has example Prometheus rules (`CubitWorkspaceGrowth`, `CubitRootGrowth`, `CubitScanFailing`, `CubitScanPartial`, `CubitSubtreeUnreadable`, `CubitDedupeOverflow`, and for cron mode `CubitTextfileStale`), unit-tested with promtool. Every one is `severity: warning`: **anything derived from Cubit is YELLOW, never RED.** Disk filling is something to look at, and Cubit is a lower bound when a scan is partial, so it is never the thing that pages.
+Cubit judges nothing. [`examples/rules/`](examples/rules/) has example Prometheus rules (`CubitWorkspaceGrowth`, `CubitRootGrowth`, `CubitScanFailing`, `CubitScanPartial`, `CubitSubtreeUnreadable`, `CubitDedupeOverflow`, and for cron mode `CubitTextfileStale`, which fires when node_exporter's `node_textfile_mtime_seconds` for `cubit.prom` stops advancing), unit-tested with promtool. Every one is `severity: warning`: **anything derived from Cubit is YELLOW, never RED.** Disk filling is something to look at, and Cubit is a lower bound when a scan is partial, so it is never the thing that pages.
 
 ## The shared `CARGO_TARGET_DIR` caveat
 
@@ -172,11 +182,11 @@ One directory per project, and each still reads as one workspace to Cubit.
 - **Allowlisted roots only.** The walk opens every root with `os.Root`, so a path escape fails at the syscall. Symlinks are never followed.
 - **Refuse list.** Credential, vault and sensitive prefixes (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.kube`, …) are refused on every entry, built in and non-removable; config only adds. See [docs/refuse-list.md](docs/refuse-list.md).
 - **Bounded.** Per-root caps on files and wall time; a hostile tree cannot exhaust the host. Partial results are reported as lower bounds.
-- **One write, optional.** The textfile output (`cubit.prom`) is the only thing Cubit writes, and only when `--textfile-dir` is set .
+- **One write, optional.** The textfile output (`cubit.prom`) is the only thing Cubit writes, and only when `--textfile-dir` is set.
 
 ## What shows up in Vigil
 
-Cubit feeds no screens of its own. Vigil reads the `cubit_*` series through its Prometheus backend and shows a `cubit{}` block, data only, with no status and no severity: per host, each root's alias, mode, bytes, success and partial flags, its five largest workspaces and its cache areas. The mapping is frozen in [docs/vigil.md](docs/vigil.md): each field, the metric it comes from and the PromQL that reads it, the freshness inputs (`cubit_scan_last_success_timestamp_seconds` and node_exporter's `node_textfile_mtime_seconds`) and the workspace label pattern. A complete example block is [`testdata/vigil/cubit-block.json`](testdata/vigil/cubit-block.json), and tests keep the page, the fixture and the metrics in step. Cubit-derived health is YELLOW, never RED.
+Cubit feeds no screens of its own. Vigil reads the `cubit_*` series through its Prometheus backend and shows a `cubit` block in its per-host summary (a JSON object; the shape is [`testdata/vigil/cubit-block.json`](testdata/vigil/cubit-block.json)), data only, with no status and no severity: per host, each root's alias, mode, bytes, success and partial flags, its five largest workspaces and its cache areas. The mapping is frozen in [docs/vigil.md](docs/vigil.md): each field, the metric it comes from and the PromQL that reads it, the freshness inputs (`cubit_scan_last_success_timestamp_seconds` and node_exporter's `node_textfile_mtime_seconds`) and the workspace label pattern. Tests keep the page, the fixture and the metrics in step. The block itself carries no severity; alerts built on Cubit's series are `severity: warning`, which is YELLOW, never RED.
 
 ## Links
 
