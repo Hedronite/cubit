@@ -1,10 +1,15 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
+
+	"github.com/Hedronite/cubit/schemas"
 )
 
 func findOne(t *testing.T, doc string) Finding {
@@ -157,5 +162,30 @@ func TestEveryFindingCarriesAListedCode(t *testing.T) {
 		if !listed[f.Code] || f.Message == "" {
 			t.Errorf("finding %+v", f)
 		}
+	}
+}
+
+// The schema's code enum and the code list are one list.
+func TestCodesMatchTheValidateSchema(t *testing.T) {
+	var sch struct {
+		Defs struct {
+			Finding struct {
+				Properties struct {
+					Code struct {
+						Enum []string `json:"enum"`
+					} `json:"code"`
+				} `json:"properties"`
+			} `json:"finding"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(schemas.Validate, &sch); err != nil {
+		t.Fatal(err)
+	}
+	want := append([]string(nil), sch.Defs.Finding.Properties.Code.Enum...)
+	have := append([]string(nil), Codes...)
+	sort.Strings(want)
+	sort.Strings(have)
+	if !reflect.DeepEqual(want, have) {
+		t.Errorf("schema %v\ncode   %v", want, have)
 	}
 }

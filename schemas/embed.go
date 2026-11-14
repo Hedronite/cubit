@@ -13,3 +13,8 @@ var Config []byte
 //
 //go:embed cubit.scan.v0.schema.json
 var Scan []byte
+
+// Validate is schemas/cubit.validate.v0.schema.json.
+//
+//go:embed cubit.validate.v0.schema.json
+var Validate []byte

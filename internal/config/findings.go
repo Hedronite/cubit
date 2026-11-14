@@ -56,6 +56,7 @@ const (
 	CodeLooksLikeTarget = "looks_like_target"
 	CodeModeEcho        = "mode_echo"
 	CodeHomeUnknown     = "home_unknown"
+	CodeRootIsWorkspace = "root_is_workspace"
 )
 
 // Codes is every code a finding can carry.
@@ -65,7 +66,7 @@ var Codes = []string{
 	CodeWrongType, CodeInvalidValue, CodeDuplicateAlias, CodeOverlappingRoot, CodeRefusedRoot,
 	CodeRefusedInside, CodeSameRealPath, CodeIntervalFloor, CodeDurationGE, CodeDuplicateSlug,
 	CodePathInvalid, CodeNotDirectory, CodeRootMissing, CodeRootUnreadable, CodeLooksLikeTarget,
-	CodeModeEcho, CodeHomeUnknown,
+	CodeModeEcho, CodeHomeUnknown, CodeRootIsWorkspace,
 }
 
 // Keys by place. A key valid in one root mode and not another is key_for_mode.
