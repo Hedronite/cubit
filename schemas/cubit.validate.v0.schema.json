@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Hedronite/cubit/schemas/cubit.validate.v0.schema.json",
+  "title": "cubit.validate/v0",
+  "description": "The document `cubit validate --json` prints on stdout, whether or not the config has errors. Codes are stable and described in docs/config.md. A message names a field and, for a refused location, only its class (builtin or config), never a path.",
+  "type": "object",
+  "required": [
+    "schema",
+    "ok",
+    "findings"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "cubit.validate/v0"
+    },
+    "ok": {
+      "description": "True when no finding has severity error. Exit 0 when true, 4 when false.",
+      "type": "boolean"
+    },
+    "findings": {
+      "description": "Errors first, then warnings, then info; each group by line.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "slug_pattern",
+            "path_relative",
+            "bad_duration",
+            "bad_enum",
+            "key_for_mode",
+            "missing_key",
+            "out_of_range",
+            "unknown_key",
+            "yaml_syntax",
+            "file_shape",
+            "bad_schema",
+            "names_key",
+            "wrong_type",
+            "invalid_value",
+            "duplicate_alias",
+            "overlapping_roots",
+            "refused_root",
+            "refused_inside",
+            "same_real_path",
+            "interval_floor",
+            "duration_ge_interval",
+            "duplicate_slug",
+            "path_invalid",
+            "not_a_directory",
+            "root_missing",
+            "root_unreadable",
+            "looks_like_target",
+            "mode_echo",
+            "home_unknown",
+            "root_is_workspace"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning",
+            "info"
+          ]
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "field": {
+          "description": "The config field, for example roots[2].alias.",
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "excerpt": {
+          "description": "The source line, trimmed, at most about 72 characters.",
+          "type": "string",
+          "maxLength": 80
+        },
+        "fix": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

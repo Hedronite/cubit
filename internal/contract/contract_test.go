@@ -664,3 +664,36 @@ func TestRefuseList(t *testing.T) {
 		}
 	}
 }
+
+// ---- cubit.validate/v0 -----------------------------------------------------
+
+func TestExampleValidateIsValid(t *testing.T) {
+	s := compile(t, "cubit.validate.v0.schema.json")
+	if err := s.Validate(asJSON(t, decodeJSON(t, read(t, "examples/validate.json")))); err != nil {
+		t.Fatalf("examples/validate.json does not satisfy cubit.validate/v0:\n%v", err)
+	}
+}
+
+func TestValidateSchemaRejects(t *testing.T) {
+	s := compile(t, "cubit.validate.v0.schema.json")
+	base := decodeJSON(t, read(t, "examples/validate.json"))
+	cases := map[string]func(m map[string]any){
+		"wrong schema":        func(m map[string]any) { m["schema"] = "cubit.validate/v1" },
+		"missing ok":          func(m map[string]any) { delete(m, "ok") },
+		"missing findings":    func(m map[string]any) { delete(m, "findings") },
+		"extra top-level key": func(m map[string]any) { m["host"] = "x" },
+		"unknown code":        func(m map[string]any) { m["findings"].([]any)[0].(map[string]any)["code"] = "made_up" },
+		"unknown severity":    func(m map[string]any) { m["findings"].([]any)[0].(map[string]any)["severity"] = "fatal" },
+		"no message":          func(m map[string]any) { delete(m["findings"].([]any)[0].(map[string]any), "message") },
+		"line zero":           func(m map[string]any) { m["findings"].([]any)[0].(map[string]any)["line"] = 0 },
+		"extra finding key":   func(m map[string]any) { m["findings"].([]any)[0].(map[string]any)["path"] = "/etc" },
+		"empty fix":           func(m map[string]any) { m["findings"].([]any)[0].(map[string]any)["fix"] = "" },
+	}
+	for name, mutate := range cases {
+		m := clone(t, base)
+		mutate(m)
+		if err := s.Validate(asJSON(t, m)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

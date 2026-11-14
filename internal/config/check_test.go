@@ -199,3 +199,19 @@ func FuzzLabel(f *testing.F) {
 		}
 	})
 }
+
+func TestCheckSaysWhenAWorkspaceRootIsItselfAWorkspace(t *testing.T) {
+	d := tmpDir(t)
+	os.MkdirAll(filepath.Join(d, "target"), 0o755)
+	os.WriteFile(filepath.Join(d, "Cargo.toml"), []byte("x"), 0o644)
+	cfg := cfgFor(t, "roots:\n  - {alias: solo, path: "+d+", mode: workspace-root}\n  - {alias: fine, path: "+d+"/target, mode: target-dir}\n")
+	var got []Finding
+	for _, f := range Check(cfg, "/home/user") {
+		if f.Code == CodeRootIsWorkspace {
+			got = append(got, f)
+		}
+	}
+	if len(got) != 1 || got[0].Severity != Warning || !strings.Contains(got[0].Fix, "target-dir root at the target/ directory inside root 'solo'") {
+		t.Errorf("%+v", got)
+	}
+}

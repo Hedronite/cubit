@@ -127,7 +127,7 @@ func notes(w io.Writer, d *scan.Document, file string) {
 			case "unmatched_name":
 				fmt.Fprintf(w, "warning: %s: %d unmatched_name in names\n", r.Alias, x.Count)
 			case "no_workspaces":
-				fmt.Fprintf(w, "warning: %s: no_workspaces; fix: check the path and mode of root %s in %s\n", r.Alias, r.Alias, file)
+				fmt.Fprintf(w, "warning: %s: no_workspaces; fix: check the path and mode of root %s in %s, or for a single project point a target-dir root at its target/\n", r.Alias, r.Alias, file)
 			}
 		}
 	}

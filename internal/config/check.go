@@ -112,6 +112,9 @@ func Check(c *Config, home string) []Finding {
 				add(Error, CodeNotDirectory, at("path"), fmt.Sprintf("%s is not a directory", at("path")), "point the root at a directory.")
 				continue
 			}
+			if r.Mode == WorkspaceRoot && isWorkspace(real) {
+				add(Warning, CodeRootIsWorkspace, at("mode"), fmt.Sprintf("%s '%s' is workspace-root but is itself a Cargo workspace (it holds Cargo.toml and target/); a workspace-root measures the workspaces below it, so this scan finds none", at(""), r.Alias), "point a target-dir root at the target/ directory inside root '"+r.Alias+"'.")
+			}
 			if r.Mode == WorkspaceRoot && looksLikeTarget(real) {
 				add(Warning, CodeLooksLikeTarget, at("mode"), fmt.Sprintf("%s '%s' is workspace-root but holds debug/ or release/ at the top level, so it looks like one target dir", at(""), r.Alias), "if so, set mode: target-dir.")
 			}
@@ -163,6 +166,16 @@ func nested(a, b []string) bool {
 		}
 	}
 	return true // equal or one is a prefix of the other
+}
+
+// isWorkspace reports whether dir holds Cargo.toml and a target directory.
+func isWorkspace(dir string) bool {
+	c, err := os.Lstat(filepath.Join(dir, "Cargo.toml"))
+	if err != nil || c.IsDir() {
+		return false
+	}
+	t, err := os.Stat(filepath.Join(dir, "target"))
+	return err == nil && t.IsDir()
 }
 
 func looksLikeTarget(dir string) bool {

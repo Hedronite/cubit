@@ -1,0 +1,36 @@
+{
+  "schema": "cubit.validate/v0",
+  "ok": false,
+  "findings": [
+    {
+      "code": "slug_pattern",
+      "severity": "error",
+      "file": "cubit.yaml",
+      "line": 4,
+      "field": "roots[0].alias",
+      "message": "roots[0].alias 'Example_Projects': use lowercase letters, digits and '-', start with a letter or digit, at most 32 characters",
+      "excerpt": "- alias: Example_Projects",
+      "fix": "rename it to 'example-projects'."
+    },
+    {
+      "code": "path_relative",
+      "severity": "error",
+      "file": "cubit.yaml",
+      "line": 5,
+      "field": "roots[0].path",
+      "message": "roots[0].path 'relative/dir': paths must be absolute or start with '~/'; Cubit resolves them from the config, not from the working directory",
+      "excerpt": "path: relative/dir",
+      "fix": "use an absolute path or '~/...'."
+    },
+    {
+      "code": "key_for_mode",
+      "severity": "error",
+      "file": "cubit.yaml",
+      "line": 10,
+      "field": "roots[1].discovery_depth",
+      "message": "roots[1].discovery_depth only applies when mode is workspace-root (this root is target-dir)",
+      "excerpt": "discovery_depth: 2",
+      "fix": "remove discovery_depth, or change the root to workspace-root."
+    }
+  ]
+}
