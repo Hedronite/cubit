@@ -58,7 +58,7 @@ var fixed = time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
 
 func env() Env { return Env{Now: func() time.Time { return fixed }} }
 
-func spec(t *testing.T, roots ...RootSpec) Spec {
+func spec(t testing.TB, roots ...RootSpec) Spec {
 	t.Helper()
 	ref, err := contain.NewRefuser("/nonexistent-home", nil, "")
 	if err != nil {
