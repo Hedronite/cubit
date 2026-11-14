@@ -1,84 +1,88 @@
 # Cubit
 
-Cubit measures how much disk Cargo build output uses. It is a Prometheus exporter that walks allowlisted `target/` and shared Cargo directories and reports bytes per workspace. It only measures: it never deletes or cleans anything.
+**Cubit measures Cargo disk usage on build hosts and exports it as Prometheus metrics. It measures; it never cleans, deletes or prunes anything.**
 
-Status: pre-release. Nothing to install yet. This repository holds the contract so far: the config schema, the scan document, the metric table, the refuse list and example Prometheus rules. The commands are built next.
+Not the Flutter Cubit state library — this is the Hedronite Cargo disk exporter.
 
-Not related to the Flutter Cubit state-management library.
+## What it is
 
-## What it is for
+A Rust-heavy workstation accrues gigabytes inside `target/` directories and shared Cargo caches. `node_exporter` shows total disk only; the question "what is eating this build box?" stays a manual `du`. Cubit walks allowlisted Cargo roots — per-workspace `target/` directories, a shared `CARGO_TARGET_DIR`, `~/.cargo` cache areas, sccache — and exports per-workspace byte gauges with bounded caps. It is a read-only exporter: no thresholds, no severity, no cleanup, no UI. Everything else about disk health happens in Prometheus rules and Vigil.
 
-A Rust-heavy build host accrues gigabytes inside `target/` directories and shared Cargo caches. `node_exporter` shows total disk only, so "what is eating this host?" stays a manual `du`. Cubit walks the roots you allow (per-workspace `target/` directories, a shared `CARGO_TARGET_DIR`, the `CARGO_HOME` cache areas, sccache) and exports per-workspace byte gauges, with bounded caps so a hostile tree cannot exhaust the host. It has no thresholds, no severity, no cleanup and no UI. Alerting is Prometheus rules ([`examples/rules/`](examples/rules/)).
+## Status
 
-## Quickstart (planned)
+**C1a is built:** `cubit scan`, `cubit validate` and `cubit version` run today. Planned: `cubit serve`, the exporter endpoint (C1b), and `--textfile-dir`, the node_exporter textfile write (C1c). The contract — `cubit.config/v0`, `cubit.scan/v0`, the metric table, the refuse list — is in PR #1 and these docs.
 
-This is what the first release will do. Nothing below runs yet. Two synthetic workspaces in a scratch directory, scanned once:
+## Quickstart
+
+Two synthetic workspaces on a scratch disk, validated and scanned:
 
 ```console
 $ root=$(mktemp -d)
-$ mkdir -p "$root/projects/app-cli/target/debug" "$root/projects/libs-core/target/release"
-$ touch "$root/projects/app-cli/Cargo.toml" "$root/projects/libs-core/Cargo.toml"
+$ mkdir -p "$root/app-cli/target/debug" "$root/libs-core/target/release"
+$ printf 'x' > "$root/app-cli/Cargo.toml"
+$ printf 'x' > "$root/libs-core/Cargo.toml"
+$ dd if=/dev/zero of="$root/app-cli/target/debug/blob" bs=64k count=1 status=none
+$ dd if=/dev/zero of="$root/libs-core/target/release/blob" bs=64k count=1 status=none
 $ cat > cubit.yaml <<EOF
 schema: cubit.config/v0
 host: build-example
 roots:
   - alias: example-projects
-    path: $root/projects
+    path: $root
     mode: workspace-root
 EOF
 $ cubit validate --config cubit.yaml
-$ cubit scan --config cubit.yaml            # human table
-$ cubit scan --config cubit.yaml --json     # cubit.scan/v0 on stdout
+cubit.yaml:6: info: roots[0] 'example-projects': mode workspace-root
+cubit.yaml: ok, 1 root(s)
+$ cubit scan --config cubit.yaml
+ROOT              MODE            BYTES   SIZE  STATE
+example-projects  workspace-root  131072  128K  ok
+  app-cli                         65536    64K
+  libs-core                       65536    64K
+$ cubit scan --config cubit.yaml --json    # cubit.scan/v0 on stdout
 ```
 
-Every name in this repository is synthetic. Roots are named by slug aliases (`example-projects`), never by filesystem path. [`examples/cubit.yaml`](examples/cubit.yaml) is a fuller configuration; [`docs/config.md`](docs/config.md) explains each key.
+Byte counts depend on filesystem block size; the output above is from a real run. `SIZE` is a rounded reading aid (base 1024); `BYTES` and the JSON carry the exact number. Every alias and path in this README is synthetic; real deployments name roots with slugs, never filesystem paths.
+
+For scripted use: `cubit scan --json` prints the `cubit.scan/v0` document alone on stdout (schema in [`schemas/cubit.scan.v0.schema.json`](schemas/cubit.scan.v0.schema.json)); `cubit validate --json` prints findings as JSON. Exit codes: 0–2 mean a scan ran (ok / partial / nothing usable), 3+ mean it could not. See [docs/cli.md](docs/cli.md).
 
 ## Metrics
 
-From `cubit serve` at `/metrics`, or written once per scan with `--textfile-dir`:
+From `cubit serve` at `/metrics` (C1b), or written once per scan with `--textfile-dir` (C1c):
 
 - **Sizes (gauges, bytes):** `cubit_workspace_target_bytes`, `cubit_workspace_profile_bytes`, `cubit_root_bytes`, `cubit_cache_bytes`.
-- **Counts (gauges):** `cubit_workspaces`, `cubit_workspaces_unlabeled`, `cubit_workspaces_unlabeled_bytes`, `cubit_skipped_entries`.
-- **Scan health:** `cubit_scan_duration_seconds`, `cubit_scan_success`, `cubit_scan_partial`, `cubit_scan_last_success_timestamp_seconds`, `cubit_scan_errors_total`, `cubit_scans_total`.
+- **Counts (gauges):** `cubit_workspaces`, `cubit_workspaces_unlabeled{,_bytes}`, `cubit_skipped_entries`.
+- **Scan health (gauges and counters):** `cubit_scan_duration_seconds`, `cubit_scan_success`, `cubit_scan_partial`, `cubit_scan_last_success_timestamp_seconds`, `cubit_scan_errors_total`, `cubit_scans_total`.
 - **Build info:** `cubit_build_info`.
 
-The full table, the label values and what each number means: [`docs/metrics.md`](docs/metrics.md). Values are base units, bytes and seconds. A scan that could not measure everything says so (`cubit_scan_partial`) and reads as a lower bound; a root that fails keeps its last good values and says so (`cubit_scan_success`).
+Full table, label enums and semantics: [docs/metrics.md](docs/metrics.md). Values are base units — bytes and seconds, no MiB, no percentages.
 
-## A shared `CARGO_TARGET_DIR`
+## The shared `CARGO_TARGET_DIR` caveat
 
-If a host sets one shared `CARGO_TARGET_DIR`, every build lands in one directory and Cubit can only report it as a single workspace named in config; it never invents per-workspace attribution. To keep both the shared cache and the attribution, give each project its own directory:
+If a build host sets one shared `CARGO_TARGET_DIR`, every build lands in one directory and Cubit can report it only as a single config-named workspace — it never invents per-workspace attribution. To keep both benefits, point each project at its own directory:
 
 ```sh
 CARGO_TARGET_DIR=$root/<name> cargo build
 ```
 
-and point a `workspace-root` at `$root`.
+One directory per project, and each still reads as one workspace to Cubit.
 
 ## Security posture
 
-- **Loopback by default.** `cubit serve` binds `127.0.0.1:9101`. A non-loopback bind is refused unless `--unsafe-listen` is given, which logs one warning with the bound address. The metrics are unauthenticated; treat the listener as private.
-- **Allowlisted roots only.** The walk opens every root with `os.Root`, so a path that would escape fails at the system call. Symlinks are never followed.
-- **A refuse list.** Credential, keychain, vault and other sensitive paths are skipped on every directory entry, and config can only add to the list. See [`docs/refuse-list.md`](docs/refuse-list.md).
-- **Bounded.** Per-root caps on entries read and on wall time, and bounded concurrency.
-- **One optional write.** `cubit.prom`, in a directory you name with `--textfile-dir`, is the only file Cubit writes.
+- **Loopback by default.** `serve` (C1b) binds `127.0.0.1:9101`. A non-loopback bind is refused unless `--unsafe-listen` is passed, which logs one WARN line with the bound address.
+- **Unauthenticated.** The metrics endpoint has no auth. Treat the listener as private; do not expose it beyond the host without understanding that.
+- **Allowlisted roots only.** The walk opens every root with `os.Root`, so a path escape fails at the syscall. Symlinks are never followed.
+- **Refuse list.** Credential, vault and sensitive prefixes (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.kube`, …) are refused on every entry, built in and non-removable; config only adds. See [docs/refuse-list.md](docs/refuse-list.md).
+- **Bounded.** Per-root caps on files and wall time; a hostile tree cannot exhaust the host. Partial results are reported as lower bounds.
+- **One write, optional.** The textfile output (`cubit.prom`) is the only thing Cubit writes, and only when `--textfile-dir` is set (C1c).
 
-Reporting a vulnerability: [`SECURITY.md`](SECURITY.md).
+## What shows up in Vigil (proposed until C3)
 
-## What shows up in Vigil (proposed)
+Cubit feeds no screens of its own. The proposed mapping, frozen at C3: Vigil reads `cubit_*` metrics through its Prometheus backend and exposes per-host disk as summary fields in `vigil.summary/v0`; Facet renders those fields next to mesh health. Nothing before C3 is committed. **Anything Cubit-derived is YELLOW, never RED** — thresholds live in Prometheus rules ([examples/rules/](examples/rules/)), and Cubit exports no severity.
 
-Cubit has no screen of its own. The proposed mapping is that Vigil reads `cubit_*` metrics through its Prometheus backend and exposes per-host disk as fields in `vigil.summary/v0`, which Facet shows. Nothing is committed until that mapping is reviewed. Anything built on Cubit is a warning, never critical: thresholds are Prometheus rules, and Cubit exports no severity.
+## Links
 
-## Documentation
-
-- [`docs/cli.md`](docs/cli.md): commands, flags and exit codes.
-- [`docs/config.md`](docs/config.md): the configuration file and what `validate` checks.
-- [`docs/metrics.md`](docs/metrics.md): the metric contract.
-- [`docs/refuse-list.md`](docs/refuse-list.md): the refuse list and containment.
-- [`schemas/`](schemas/): the JSON Schemas for `cubit.config/v0` and `cubit.scan/v0`.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md): how to contribute, with sign-off (DCO).
-
-## License
-
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT), at your option.
-
-Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in this work, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+- [docs/metrics.md](docs/metrics.md) — the metric contract.
+- [docs/cli.md](docs/cli.md) — commands, flags, exit codes.
+- [docs/refuse-list.md](docs/refuse-list.md) — the built-in refuse list and containment.
+- [CONTRIBUTING.md](CONTRIBUTING.md) (DCO), [SECURITY.md](SECURITY.md).

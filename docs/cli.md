@@ -1,16 +1,16 @@
 # The Cubit CLI
 
-The command reference as contracted so far. No command exists yet. The help text below is the proposed `--help` output, and it will be snapshot-tested once the commands are built.
+Command reference for the built commands: `scan`, `validate`, `version` (C1a). `serve` (C1b) and `--textfile-dir` (C1c) are planned and marked as such. Help text below is the snapshot-tested `--help` output; wording of config findings is being reworked separately (`messages.md` in the C1a pairing drafts) and will land as a golden update.
 
-## Flags
+## Global flags
+
+Cobra shows root-level persistent flags on subcommands under `Global Flags`:
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--config FILE` | `cubit.yaml` | Config file, `cubit.config/v0`, decoded strictly: an unknown key is an error. |
-| `--json` | off | Print the document alone on stdout. The human rendering is the default. Errors go to stderr either way. |
-| `--listen ADDR` | `127.0.0.1:9101` | `serve` only. Loopback by default. |
-| `--unsafe-listen` | off | `serve` only. Allows a non-loopback `--listen`. The metrics are unauthenticated; one warning with the bound address is logged. |
-| `--textfile-dir DIR` | off | `scan` and `serve`. Write `cubit.prom` (node_exporter textfile format). The directory must already exist and sit outside the refuse list. Written to a temp file in the same directory, fsynced, renamed, mode 0644, under a single-writer lock. |
+| `--config FILE` | `cubit.yaml` | Config file, `cubit.config/v0`, strictly decoded: an unknown key is an error. Settable on the root command too (`cubit --config other.yaml scan`). |
+
+Per-command flags live under `Flags` on each command (`--json` today; `--listen`, `--unsafe-listen` and `--textfile-dir` arrive with C1b/C1c).
 
 ## `cubit`
 
@@ -22,11 +22,10 @@ Usage:
   cubit [command]
 
 Available Commands:
+  help        Help about any command
   scan        Scan configured roots once and print the result
-  serve       Run the exporter and serve /metrics
   validate    Check the config and report every problem at once
   version     Print the version
-  help        Help about any command
 
 Flags:
       --config string   config file (default "cubit.yaml")
@@ -35,6 +34,8 @@ Flags:
 
 Use "cubit [command] --help" for more information about a command.
 ```
+
+`serve` joins this list in C1b.
 
 ## `cubit scan`
 
@@ -46,55 +47,37 @@ Usage:
   cubit scan [flags]
 
 Flags:
-      --config string      config file (default "cubit.yaml")
-      --json               print cubit.scan/v0 instead of the human table
-      --textfile-dir DIR   also write cubit.prom into DIR
-  -h, --help               help for scan
+  -h, --help   help for scan
+      --json   print cubit.scan/v0 instead of the human table
+
+Global Flags:
+      --config string   config file (default "cubit.yaml")
 ```
 
-A sample human table. Workspaces and caches are listed biggest first, ties by name. Sizes are bytes, exactly as in `--json`. A root with no usable result shows `-` and says why below. A one-shot scan has no earlier scan to fall back on, so it has no last-good values; `serve` keeps them.
+Sample human table for `examples/scan.json`. Roots follow the document order (by alias); workspaces and caches are biggest first, ties by name. `BYTES` is exact; `SIZE` is a rounded reading aid.
 
 ```
-ROOT                    MODE            BYTES        STATE
-example-projects        workspace-root  42000000000  partial
-  app-cli                               30000000000
-  libs/core                             11000000000
-  (1 unlabeled)                         1000000000
-example-cargo-home      cargo-home      9000000000   ok
-  git-db                                3000000000
-  registry-cache                        2500000000
-  git-checkouts                         2000000000
-  cargo-bin                             500000000
-  registry-index                        500000000
-  registry-src                          500000000
-example-shared-target   target-dir      -            failed
+ROOT                   MODE            BYTES        SIZE  STATE
+example-cargo-home     cargo-home      9000000000   8.4G  ok
+  git-db                               3000000000   2.8G
+  registry-cache                       2500000000   2.3G
+  git-checkouts                        2000000000   1.9G
+  cargo-bin                            500000000    477M
+  registry-index                       500000000    477M
+  registry-src                         500000000    477M
+example-projects       workspace-root  42000000000   39G  partial
+  app-cli                              30000000000   28G
+  libs/core                            11000000000   10G
+  (1 unlabeled)                        1000000000   954M
+example-shared-target  target-dir      -               -  failed
+warning: example-cargo-home skipped 1 refused
 warning: example-projects partial: deadline_exceeded; every size is a lower bound
 warning: example-projects skipped 2 permission_denied, 14 vanished
-warning: example-projects: 1 names entry matched no workspace
-error:   example-shared-target failed: root_missing; check the path in cubit.yaml
+warning: example-projects: 1 unmatched_name in names
+error:   example-shared-target failed: root_missing; fix: check that the path of root example-shared-target in cubit.yaml exists
 ```
 
-## `cubit serve`
-
-```
-Run the exporter: serve /metrics and /healthz on --listen.
-
-/metrics serves the last finished scan and never walks on scrape.
-Scans run on an interval (default 5m), one in flight at a time.
-/healthz is 200 when the config is valid and the process is serving;
-it never touches the scanner. The metrics are unauthenticated; a
-non-loopback bind requires --unsafe-listen.
-
-Usage:
-  cubit serve [flags]
-
-Flags:
-      --config string      config file (default "cubit.yaml")
-      --listen ADDR        listen address (default "127.0.0.1:9101")
-      --unsafe-listen      allow a non-loopback bind (metrics are unauthenticated)
-      --textfile-dir DIR   write cubit.prom after every scan
-  -h, --help               help for serve
-```
+A partial scan's sizes are lower bounds. A failed root keeps its last-good values in `/metrics` (C1b); a one-shot `scan` has none, so it prints `-`.
 
 ## `cubit validate`
 
@@ -102,8 +85,7 @@ Flags:
 Check the config and report every problem at once, not just the first.
 
 Checks include duplicate aliases, nested or overlapping roots, a root
-inside a refused prefix, two roots resolving to one real path, and a
-textfile directory whose temp file would land on another filesystem.
+inside a refused prefix, and two roots resolving to one real path.
 It also prints each root's resolved mode. The full list is in
 docs/config.md.
 
@@ -111,24 +93,11 @@ Usage:
   cubit validate [flags]
 
 Flags:
+  -h, --help   help for validate
+      --json   print findings as JSON
+
+Global Flags:
       --config string   config file (default "cubit.yaml")
-      --json            print findings as JSON
-  -h, --help            help for validate
-```
-
-### Error house style
-
-Every error names the file and field, shows a one-line excerpt, and ends with the fix:
-
-```
-cubit.yaml: roots[2].alias duplicates roots[0].alias
-  roots[0]: alias: example-projects
-  roots[2]: alias: example-projects
-  fix: give each root a distinct alias slug.
-
-cubit.yaml: roots[3].path sits inside the built-in refuse list (~/.ssh)
-  roots[3]: path: ~/.ssh/agent-workspaces
-  fix: move the root outside a refused prefix; the walk will not read ~/.ssh.
 ```
 
 ## `cubit version`
@@ -140,22 +109,74 @@ Usage:
   cubit version [flags]
 
 Flags:
-      --json    print {"version":...,"revision":...,"go_version":...} instead
-  -h, --help    help for version
+  -h, --help   help for version
+      --json   print {"version":...,"revision":...,"go_version":...} instead
+
+Global Flags:
+      --config string   config file (default "cubit.yaml")
+```
+
+Output today:
+
+```
+$ cubit version
+cubit dev (f70cb66f823c, go1.27.4)
+$ cubit version --json
+{"version":"dev","revision":"f70cb66f823c","go_version":"go1.27.4"}
 ```
 
 ## Exit codes
 
-Only "0 to 2 means a scan ran, 3 and up means it could not" is the public contract.
+Only "0–2 means a scan ran, 3+ means it could not" is the public contract. Codes 0 to 2 still print the document (table or `--json`).
 
 | Code | Meaning |
 |---|---|
-| 0 | ok: every root usable and complete |
-| 1 | partial: a scan ran, but some bytes were not measured (a cap, or an unreadable subtree), or one root failed while another gave a result. Sizes are lower bounds. |
-| 2 | nothing usable: a scan ran but no root gave a result. The document is still printed, because it is the diagnostic. |
-| 3 | usage: bad flag or arguments |
-| 4 | invalid config: `validate` failures, a refused root, an unreadable config file |
-| 5 | `serve` refused to start: bad bind or config |
-| 6 | internal error: `main` recovered a panic, so a crash never reads as a scan result |
+| 0 | ok — every root usable, no cap hit |
+| 1 | partial — a scan ran but some bytes went unmeasured (a cap or an unreadable subtree); sizes are lower bounds |
+| 2 | nothing usable — a scan ran but every root failed |
+| 3 | usage — bad flag or arguments |
+| 4 | invalid config — `validate` findings, unreadable or refused config |
+| 5 | `serve` refused to start (C1b) |
+| 6 | internal error — `main` recovered a panic; a crash never reads as a scan result |
 
-Codes 0 to 2 print the document on stdout. Codes 3 to 6 print nothing on stdout; the error is on stderr.
+## Error house style
+
+Every finding names the file and field, shows a one-line excerpt, and ends with the fix. Real output today:
+
+```
+bad.yaml:3: error: 'Example_Projects' does not match pattern '^[a-z0-9][a-z0-9-]{0,31}$'
+  | - alias: Example_Projects
+  fix: use the format docs/config.md gives for this field.
+
+cubit: cannot read config nope.yaml: no such file or directory; pass --config, or create it from examples/cubit.yaml
+cubit: unknown flag: --frob
+Run 'cubit --help' for usage.
+```
+
+The schema-derived wording is under rework; the target wording per finding class is in `messages.md` (C1a pairing drafts). The shape above — file, line, field, excerpt, fix — does not change.
+
+## Global Flags: keep as is
+
+Keep cobra's default `Global Flags` block rather than a custom template. Reasons: `--config` is defined once on the root, so `cubit --config other.yaml scan` and `cubit scan --config other.yaml` both work; one default template means no per-command template to maintain or re-snapshot; and the one wart, `--config` appearing under `version`, is harmless and stable. If it ever bothers anyone, hide it on `version` alone — do not restructure all commands for it.
+
+## Planned (C1b, C1c)
+
+- `cubit serve` — `/metrics` and `/healthz` on `--listen` (default `127.0.0.1:9101`); non-loopback binds require `--unsafe-listen`; metrics are unauthenticated; scans run on an interval, one in flight, and `/metrics` never walks on scrape.
+- `--textfile-dir DIR` on `scan` and `serve` — writes `cubit.prom` (node_exporter textfile format) after a scan; the directory must exist and sit outside the refuse list; temp+rename in the same directory, fsync, mode 0644, single-writer `flock`.
+
+## Finding format
+
+`validate` and `scan` report config problems as `file:line: severity: message`, the source line as an excerpt, and a fix that says what to do. Errors come first, then warnings, then info lines. Every finding has a stable `code` (listed in [config.md](config.md#finding-codes)), shown in `validate --json`:
+
+```
+bad.yaml:5: error: roots[0].mode 'workspace-rot' is not a mode
+  | mode: workspace-rot
+  fix: use one of workspace-root, target-dir, cargo-home, sccache; 'workspace-root' looks closest.
+bad.yaml: not ok: 1 error(s)
+```
+
+Schema problems are reported first. The cross-field checks (duplicate aliases, overlapping roots, refused roots) run once the file decodes, so a file can show a second round of findings after the first is fixed.
+
+## Planned: `cubit serve`
+
+`serve` is C1b and `--textfile-dir` is C1c; neither is built. The contract is unchanged: `serve` listens on `127.0.0.1:9101` by default, refuses a non-loopback `--listen` without `--unsafe-listen` (the metrics are unauthenticated), serves `/metrics` from the last finished scan and never walks on scrape, answers `/healthz` without touching the scanner, and rescans every `scan.interval`. `--textfile-dir DIR` writes `cubit.prom` after a scan, through a temp file and rename, under a single-writer lock.

@@ -5,6 +5,16 @@ run:
   tests: true
 
 linters:
+  settings:
+    errcheck:
+      # Closing a directory or root that was only read cannot lose data.
+      exclude-functions:
+        - (*os.File).Close
+        - (*os.Root).Close
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Writer).Write
   default: standard
   enable:
     - errorlint
@@ -15,12 +25,18 @@ linters:
     - usestdlibvars
   exclusions:
     rules:
-      # Tests read fixtures by computed path.
+      # Tests read fixtures by computed path, and build trees with best-effort
+      # setup and cleanup calls whose failure the assertions would show anyway.
       - path: _test\.go
         linters:
           - gosec
+          - errcheck
 
 formatters:
   enable:
     - gofmt
     - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/Hedronite/cubit
