@@ -58,3 +58,48 @@ Beyond the schema, and all at once rather than stopping at the first error, each
 - a `workspace-root` whose top level looks like a target dir (`debug/` or `release/` present): a warning that suggests `mode: target-dir`. `mode` is always required; Cubit never guesses it. A scan that finds no workspaces under a `workspace-root` reports a `no_workspaces` warning for the same reason.
 
 `validate` also prints each root's resolved mode, so the operator sees what Cubit will do.
+
+## Finding codes
+
+Every finding `validate` or `scan` reports carries a stable `code`, shown in `cubit validate --json` with the `severity`, `file`, `line`, `field`, `message`, `excerpt` and `fix`. A finding's wording may improve; its code does not change, and a new code is a contract change. Errors are listed first, then warnings, then info, each by line. A message names the field and a refused location only by its class (`builtin` or `config`), never by path.
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `yaml_syntax` | error | The file is not valid YAML. |
+| `file_shape` | error | Empty, over 1 MiB, more than one document, an anchor or alias, or a non-string key. |
+| `bad_schema` | error | `schema` is not `cubit.config/v0`. |
+| `missing_key` | error | A required key is absent (`schema`, `roots`, a root's `alias`, `path` or `mode`). |
+| `unknown_key` | error | A key that belongs nowhere here. The fix names the nearest real key, or where the key lives. |
+| `key_for_mode` | error | A real key, but for another root mode (`discovery_depth` on a `target-dir`). |
+| `slug_pattern` | error | An alias, `host` or slug outside the grammar. The fix suggests one. |
+| `path_relative` | error | A path that is not absolute or `~/…`. |
+| `bad_duration` | error | A duration outside the grammar. |
+| `bad_enum` | error | `mode` is not one of the four. The fix names the closest. |
+| `out_of_range` | error | A number or list outside its limits. |
+| `names_key` | error | A `names` key that is not a usable relative path. |
+| `wrong_type` | error | A value of the wrong type. |
+| `invalid_value` | error | Anything else the schema rejects. |
+| `duplicate_alias` | error | Two roots share an alias. |
+| `overlapping_roots` | error | One root lies inside another. |
+| `same_real_path` | error | Two roots resolve to one directory. |
+| `refused_root` | error | A root, or the place it resolves to, is inside a refused prefix. |
+| `path_invalid` | error | A path with a `.` or `..` part, or `~/` with no home. |
+| `not_a_directory` | error | A root that is a file. |
+| `interval_floor` | error | `scan.interval` under 30s. |
+| `duration_ge_interval` | error | A root's `max_duration` at or above `scan.interval`. |
+| `duplicate_slug` | error | Two `names` entries declare one slug, or a declared slug equals a derived label. |
+| `home_unknown` | error | A `~/` refuse entry and no home directory. |
+| `root_missing` | warning | A root's path does not exist now. A scan reports `root_missing`. |
+| `root_unreadable` | warning | A root's path cannot be resolved now. |
+| `looks_like_target` | warning | A `workspace-root` holding `debug/` or `release/` at the top. |
+| `refused_inside` | info | A refused prefix lies inside a root. Legal: it is skipped and counted. |
+| `mode_echo` | info | The root's resolved mode, one line per root. |
+
+## Measuring notes
+
+- **Hardlinks** are counted once per workspace (or cache area), not across them. A file hardlinked into two workspaces counts in both, so a root can total more than `du -s` of the same directories. The reason is determinism: one unit is walked by one goroutine in name order, so which workspace owns a link never depends on timing. A unit's hardlink set holds about a million entries; beyond that, later hardlinks are counted and reported as `dedupe_overflow`.
+- **A partial scan is not reproducible.** When a cap trips, which workspaces finished first depends on scheduling, so two partial scans of one tree can differ. Only a complete scan is deterministic. The numbers of a partial scan are lower bounds, nothing more.
+- **`max_files` bounds entries read, not syscalls.** `max_duration` is the bound on wall time and so on syscalls.
+- **A symlinked `target/`** is followed through every hop that stays inside its root, with the refuse list checked on each hop (up to 40 hops). One that leaves the root, is absolute, loops, or lands on a refused path is skipped as `symlink_escape`, `symlink_loop` or `refused`. To measure a shared target that workspaces link to from outside their root, give it its own `target-dir` root.
+- **A symlinked cache area** under `cargo-home` (for example `registry/cache` linked to another disk) is not followed. It reads zero and counts as `symlink_escape`. Point a `target-dir`-style root at the real location instead.
+- **Names case.** The refuse list folds case with Unicode lowercasing and does not normalize Unicode; an APFS volume that matches names by normalization could still show a spelling the list does not.

@@ -56,6 +56,8 @@ Only `root` and `workspace` carry text from the operator. `root` is a config ali
 - **Failed and partial.** A *failed* root keeps its last good values, with `cubit_scan_success` 0. A *partial* root publishes what it measured, with `cubit_scan_partial` 1. A partial scan never falls back to last-good, because a stale number is worse than a lower bound.
 - **Exit codes.** `cubit scan` exits 0 when every root is ok and complete, 2 when no root produced a usable result, and 1 in between (some root partial or failed). Codes 0 to 2 print the document on stdout; codes 3 to 6 print nothing there.
 - **`result`.** `ok` is every root complete, `partial` is the in-between, `failed` is nothing usable.
+- **Hardlinks** are deduplicated within one workspace or cache area, not across them, so a root can total more than `du -s` of the same directories. See [config.md](config.md#measuring-notes).
+- **`last_success_at`** is absent from the scan document, not zero, before a root's first successful scan. `unmatched_name` and `no_workspaces` are config-quality warnings in the scan document only; there is no metric for them.
 - **Never walks on scrape.** `/metrics` serves the last finished scan.
 
 ## Alerting
