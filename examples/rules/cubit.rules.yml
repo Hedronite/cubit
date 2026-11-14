@@ -1,5 +1,10 @@
 # Example Prometheus alerting rules for Cubit. Synthetic: copy and adapt.
 #
+# These rules are written for `cubit serve`. They use cubit_scan_errors_total,
+# which a one-shot `scan --textfile-dir` file does not carry (counters are
+# process-scoped); with cron mode, drop that counter guard and hold growth on
+# `max_over_time(cubit_scan_partial[24h]) == 0` instead.
+#
 # Cubit measures and judges nothing. Thresholds belong here, in Prometheus.
 # Every rule carries severity "warning": anything built on Cubit is a YELLOW
 # signal and never a page. Match the label vocabulary of your own rule files
@@ -8,16 +13,23 @@ groups:
   - name: cubit
     rules:
       # Disk growth, attributed. Fires per workspace so the alert names the culprit.
-      # A partial scan reports a lower bound, and a complete scan after it (or the
-      # reverse) looks like a jump, so growth alerts stay quiet for 24h after a
-      # root flips between complete and partial. A root that stays partial still
-      # alerts: lower bound against lower bound compares fairly, and CubitScanPartial
-      # and CubitSubtreeUnreadable flag the causes. Matching keeps `instance`, because root
-      # aliases are per host and one host's partial must not mute another's.
+      # Two things make a delta meaningless, so growth stays quiet for 24h after
+      # either. A partial scan reports a lower bound, and a complete scan after it
+      # (or the reverse) looks like a jump: the guard is a change in
+      # cubit_scan_partial. And a cap (deadline_exceeded, max_files_exceeded)
+      # cuts a scan at a point that moves from scan to scan, so two capped scans
+      # compare nothing: the guard is no cap hit in the window. A root that stays
+      # partial for another reason, such as one stable unreadable subtree, still
+      # alerts: lower bound against lower bound compares fairly, and
+      # CubitSubtreeUnreadable flags the cause. The guards rely on the error
+      # counters existing at 0 from the first scrape, which Cubit does. Matching
+      # keeps `instance`, because root aliases are per host and one host's partial
+      # must not mute another's.
       - alert: CubitWorkspaceGrowth
         expr: |
           delta(cubit_workspace_target_bytes[24h]) > 5e9
           and ignoring (workspace) changes(cubit_scan_partial[24h]) == 0
+          and ignoring (workspace) sum without (reason) (increase(cubit_scan_errors_total{reason=~"deadline_exceeded|max_files_exceeded"}[24h])) == 0
         for: 30m
         labels:
           severity: warning
@@ -30,6 +42,7 @@ groups:
         expr: |
           delta(cubit_root_bytes[24h]) > 20e9
           and changes(cubit_scan_partial[24h]) == 0
+          and sum without (reason) (increase(cubit_scan_errors_total{reason=~"deadline_exceeded|max_files_exceeded"}[24h])) == 0
         for: 30m
         labels:
           severity: warning
