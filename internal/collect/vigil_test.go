@@ -70,15 +70,35 @@ type cacheBlock struct {
 	Bytes int64  `json:"bytes"`
 }
 
-// scrape is what Prometheus would hold for one host: the exposition's samples,
-// each with the instance label Prometheus adds.
-func scrape(t *testing.T, instance string, exposition []byte) []sample {
+// nodeJob stands for the node_exporter scrape job. Vigil's config owns the real
+// name; the page writes it as <node_exporter job> and the tests as node.
+const nodeJob = "node"
+
+// slugs is the part of Vigil's overlay hosts[] that maps a Prometheus instance
+// (an address) to a host slug. An instance not in it is not shown.
+var slugs = map[string]string{"192.0.2.10:9100": "lab", "192.0.2.11:9100": "edge"}
+
+const (
+	labInstance      = "192.0.2.10:9100"
+	edgeInstance     = "192.0.2.11:9100"
+	unmappedInstance = "192.0.2.99:9100"
+)
+
+// scrapeJob is what Prometheus would hold for one target: the exposition's
+// samples, each with the job and instance labels Prometheus adds.
+func scrapeJob(t *testing.T, job, instance string, exposition []byte) []sample {
 	t.Helper()
 	ss, _ := parse(t, string(exposition))
 	for i := range ss {
+		ss[i].labels["job"] = job
 		ss[i].labels["instance"] = instance
 	}
 	return ss
+}
+
+func scrape(t *testing.T, instance string, exposition []byte) []sample {
+	t.Helper()
+	return scrapeJob(t, nodeJob, instance, exposition)
 }
 
 func asInt(t *testing.T, s sample) int64 {
@@ -90,24 +110,35 @@ func asInt(t *testing.T, s sample) int64 {
 	return n
 }
 
-// buildBlock applies the mapping table of docs/vigil.md to the samples of every
-// host. It is the reference for what Vigil's named queries compute.
-func buildBlock(t *testing.T, samples []sample) block {
+// buildBlock applies the mapping table of docs/vigil.md to what Prometheus
+// holds. Every query is pinned to the node_exporter job, so a series of the same
+// name from another job is never seen, and an instance with no host slug is left
+// out. It is the reference for what Vigil's named queries compute.
+func buildBlock(t *testing.T, all []sample) block {
 	t.Helper()
-	hosts := map[string]bool{}
+	var samples []sample
+	for _, s := range all {
+		if s.labels["job"] == nodeJob {
+			samples = append(samples, s)
+		}
+	}
+	bySlug := map[string]string{} // slug -> instance
 	for _, s := range find(samples, metricFor("hosts[].host")) {
-		hosts[s.labels["instance"]] = true
+		if slug, ok := slugs[s.labels["instance"]]; ok {
+			bySlug[slug] = s.labels["instance"]
+		}
 	}
 	var names []string
-	for h := range hosts {
+	for h := range bySlug {
 		names = append(names, h)
 	}
 	sort.Strings(names)
 
 	out := block{Hosts: []hostBlock{}}
 	for _, host := range names {
+		instance := bySlug[host]
 		mine := func(name string, kv ...string) []sample {
-			return find(samples, name, append([]string{"instance", host}, kv...)...)
+			return find(samples, name, append([]string{"instance", instance}, kv...)...)
 		}
 		hb := hostBlock{Host: host, Roots: []rootBlock{}}
 
@@ -135,8 +166,8 @@ func buildBlock(t *testing.T, samples []sample) block {
 				n := asInt(t, got[0])
 				rb.Bytes = &n
 			}
-			rb.Success = one(t, samples, metricFor("hosts[].roots[].success"), "instance", host, "root", alias) == "1"
-			rb.Partial = one(t, samples, metricFor("hosts[].roots[].partial"), "instance", host, "root", alias) == "1"
+			rb.Success = one(t, samples, metricFor("hosts[].roots[].success"), "instance", instance, "root", alias) == "1"
+			rb.Partial = one(t, samples, metricFor("hosts[].roots[].partial"), "instance", instance, "root", alias) == "1"
 
 			for _, s := range mine(metricFor("hosts[].roots[].top[].name"), "root", alias) {
 				rb.Top = append(rb.Top, topBlock{Name: s.labels["workspace"], Bytes: asInt(t, s)})
@@ -173,7 +204,9 @@ func render(t *testing.T, b block) []byte {
 
 // fixtureBlock renders examples/scan.json for two hosts the way a deployment
 // would: lab serves (the full exposition), edge runs one-shot scans from cron
-// (gauges only), and edge's last scan is five minutes newer.
+// (gauges only), and edge's last scan is five minutes newer. Around them sit
+// what a real Prometheus also holds and the block must not show: an instance
+// with no host slug, and the same metrics from another scrape job.
 func fixtureBlock(t *testing.T) block {
 	t.Helper()
 	aliases := []string{"example-cargo-home", "example-projects", "example-shared-target"}
@@ -183,7 +216,13 @@ func fixtureBlock(t *testing.T) block {
 	edge := New(info, aliases)
 	mustUpdate(t, edge, exampleDoc(t), t0.Add(5*time.Minute))
 
-	samples := append(scrape(t, "lab", lab.Metrics()), scrape(t, "edge", edge.Gauges())...)
+	stray := New(info, []string{"ghost"})
+	mustUpdate(t, stray, doc(root("ghost", "sccache", true, false, 999)), t0.Add(time.Hour))
+
+	samples := append(scrape(t, labInstance, lab.Metrics()), scrape(t, edgeInstance, edge.Gauges())...)
+	samples = append(samples, scrape(t, unmappedInstance, stray.Metrics())...)
+	samples = append(samples, scrapeJob(t, "other", labInstance, stray.Metrics())...)
+	samples = append(samples, scrapeJob(t, "other", edgeInstance, stray.Metrics())...)
 	return buildBlock(t, samples)
 }
 
@@ -317,10 +356,22 @@ func TestVigilQueriesAreRunByPromtoolTest(t *testing.T) {
 	}
 	tested := map[string]bool{}
 	for _, m := range regexp.MustCompile(`(?m)^\s*- expr: (.+)$`).FindAllStringSubmatch(string(b), -1) {
-		tested[strings.TrimSpace(m[1])] = true
+		q := strings.TrimSpace(m[1])
+		tested[q] = true
+		if !strings.Contains(q, `job="`+nodeJob+`"`) {
+			t.Errorf("promtool test query %q is not pinned to job=%q", q, nodeJob)
+		}
 	}
+	const placeholder = `job="<node_exporter job>"`
 	for _, q := range promql {
-		if !tested[q] {
+		if !strings.Contains(q, placeholder) {
+			t.Errorf("docs/vigil.md query %q is not pinned with %s", q, placeholder)
+		}
+		if strings.Contains(q, "topk") {
+			t.Errorf("docs/vigil.md query %q: Vigil sorts and cuts top[] itself, so the page does not use topk", q)
+		}
+		run := strings.ReplaceAll(q, "<node_exporter job>", nodeJob)
+		if !tested[run] {
 			t.Errorf("docs/vigil.md query %q has no promql_expr_test in testdata/vigil/queries.test.yml", q)
 		}
 	}
@@ -390,7 +441,7 @@ func TestTopIsTheFiveLargestAndGeneratedAtTheNewestSuccess(t *testing.T) {
 		root("h", "cargo-home", false, false, 0),
 	), t0.Add(10*time.Minute))
 
-	got := buildBlock(t, scrape(t, "lab", c.Metrics()))
+	got := buildBlock(t, scrape(t, labInstance, c.Metrics()))
 	if len(got.Hosts) != 1 {
 		t.Fatalf("%+v", got)
 	}
@@ -419,16 +470,50 @@ func TestTopIsTheFiveLargestAndGeneratedAtTheNewestSuccess(t *testing.T) {
 // Before any scan has finished a host is listed with no roots and no time.
 func TestAHostBeforeItsFirstScanHasNoRootsAndNoTime(t *testing.T) {
 	c := New(info, []string{"p"})
-	got := buildBlock(t, scrape(t, "lab", c.Metrics()))
+	got := buildBlock(t, scrape(t, labInstance, c.Metrics()))
 	want := block{Hosts: []hostBlock{{Host: "lab", Roots: []rootBlock{}}}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("%+v", got)
 	}
 	// A root that failed on its first scan is listed, with its mode and no bytes.
 	mustUpdate(t, c, doc(root("p", "sccache", false, false, 0)), t0)
-	got = buildBlock(t, scrape(t, "lab", c.Metrics()))
+	got = buildBlock(t, scrape(t, labInstance, c.Metrics()))
 	r := got.Hosts[0].Roots
 	if len(r) != 1 || r[0].Mode != "sccache" || r[0].Bytes != nil || got.Hosts[0].GeneratedAt != "" {
 		t.Errorf("%+v", got)
+	}
+}
+
+// The page says what Vigil does with a host it cannot name and with one that has
+// no data, and no longer lets `instance` through as the host.
+func TestVigilPageStatesHostAndNoDataRules(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "vigil.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(b)
+	for _, want := range []string{"unmapped_instance", "no_series", "`hosts[]`", "left out of `cubit{}`"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("docs/vigil.md does not mention %s", want)
+		}
+	}
+	for _, banned := range []string{"verbatim", "may normalize"} {
+		if strings.Contains(page, banned) {
+			t.Errorf("docs/vigil.md still says %q: instance is an address and is mapped, not passed through", banned)
+		}
+	}
+}
+
+// An instance with no host slug is not in the block, even when its series are
+// complete; a mapped one is.
+func TestAnUnmappedInstanceIsLeftOut(t *testing.T) {
+	c := New(info, []string{"p"})
+	mustUpdate(t, c, doc(root("p", "workspace-root", true, false, 1, ws("x", 1))), t0)
+	got := buildBlock(t, append(scrape(t, unmappedInstance, c.Metrics()), scrape(t, labInstance, c.Metrics())...))
+	if len(got.Hosts) != 1 || got.Hosts[0].Host != "lab" {
+		t.Errorf("%+v", got.Hosts)
+	}
+	if got := buildBlock(t, scrape(t, unmappedInstance, c.Metrics())); len(got.Hosts) != 0 {
+		t.Errorf("%+v", got.Hosts)
 	}
 }

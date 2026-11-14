@@ -1,132 +1,178 @@
 # Unit tests for the PromQL in docs/vigil.md. Run: promtool test rules testdata/vigil/queries.test.yml
 # Every expression in the mapping and freshness tables is evaluated here, and a Go
-# test checks that each one appears below word for word.
+# test checks that each one appears below word for word, with the page's
+# <node_exporter job> placeholder written as node. Vigil's config owns the real job
+# name. Series from another job (job="other") sit beside the node ones and no
+# pinned query may return them.
 evaluation_interval: 1m
 
 tests:
   - interval: 1m
     input_series:
       # Host lab: a workspace root with seven workspaces and a cargo-home root.
-      - series: 'cubit_build_info{instance="lab",version="v0.0.0-test",revision="abc123",go_version="go1.test"}'
+      - series: 'cubit_build_info{job="node",instance="lab",version="v0.0.0-test",revision="abc123",go_version="go1.test"}'
         values: '1x5'
-      - series: 'cubit_root_info{instance="lab",root="projects",mode="workspace-root"}'
+      - series: 'cubit_root_info{job="node",instance="lab",root="projects",mode="workspace-root"}'
         values: '1x5'
-      - series: 'cubit_root_info{instance="lab",root="cargo",mode="cargo-home"}'
+      - series: 'cubit_root_info{job="node",instance="lab",root="cargo",mode="cargo-home"}'
         values: '1x5'
-      - series: 'cubit_root_bytes{instance="lab",root="projects"}'
+      - series: 'cubit_root_bytes{job="node",instance="lab",root="projects"}'
         values: '280x5'
-      - series: 'cubit_root_bytes{instance="lab",root="cargo"}'
+      - series: 'cubit_root_bytes{job="node",instance="lab",root="cargo"}'
         values: '90x5'
-      - series: 'cubit_scan_success{instance="lab",root="projects"}'
+      - series: 'cubit_scan_success{job="node",instance="lab",root="projects"}'
         values: '1x5'
-      - series: 'cubit_scan_success{instance="lab",root="cargo"}'
+      - series: 'cubit_scan_success{job="node",instance="lab",root="cargo"}'
         values: '0x5'
-      - series: 'cubit_scan_partial{instance="lab",root="projects"}'
+      - series: 'cubit_scan_partial{job="node",instance="lab",root="projects"}'
         values: '1x5'
-      - series: 'cubit_scan_partial{instance="lab",root="cargo"}'
+      - series: 'cubit_scan_partial{job="node",instance="lab",root="cargo"}'
         values: '0x5'
-      - series: 'cubit_scan_last_success_timestamp_seconds{instance="lab",root="projects"}'
+      - series: 'cubit_scan_last_success_timestamp_seconds{job="node",instance="lab",root="projects"}'
         values: '200x5'
-      - series: 'cubit_scan_last_success_timestamp_seconds{instance="lab",root="cargo"}'
+      - series: 'cubit_scan_last_success_timestamp_seconds{job="node",instance="lab",root="cargo"}'
         values: '250x5'
-      - series: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="w1"}'
+      - series: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w1"}'
         values: '10x5'
-      - series: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="w2"}'
+      - series: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w2"}'
         values: '20x5'
-      - series: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="w3"}'
+      - series: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w3"}'
         values: '30x5'
-      - series: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="w4"}'
+      - series: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w4"}'
         values: '40x5'
-      - series: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="w5"}'
+      - series: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w5"}'
         values: '50x5'
-      - series: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="libs/w6"}'
+      - series: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="libs/w6"}'
         values: '60x5'
-      - series: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="w7"}'
+      - series: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w7"}'
         values: '70x5'
-      - series: 'cubit_cache_bytes{instance="lab",root="cargo",kind="git-db"}'
+      - series: 'cubit_cache_bytes{job="node",instance="lab",root="cargo",kind="git-db"}'
         values: '60x5'
-      - series: 'cubit_cache_bytes{instance="lab",root="cargo",kind="cargo-bin"}'
+      - series: 'cubit_cache_bytes{job="node",instance="lab",root="cargo",kind="cargo-bin"}'
         values: '30x5'
       # node_exporter's own series: only cubit.prom counts, whatever directory it sits in.
-      - series: 'node_textfile_mtime_seconds{instance="lab",file="/var/lib/node_exporter/text/cubit.prom"}'
+      - series: 'node_textfile_mtime_seconds{job="node",instance="lab",file="/var/lib/node_exporter/text/cubit.prom"}'
         values: '280x5'
-      - series: 'node_textfile_mtime_seconds{instance="lab",file="/var/lib/node_exporter/text/other.prom"}'
+      - series: 'node_textfile_mtime_seconds{job="node",instance="lab",file="/var/lib/node_exporter/text/other.prom"}'
         values: '299x5'
       # Host edge: one root, scanned longer ago, and no textfile series at all.
-      - series: 'cubit_build_info{instance="edge",version="v0.0.0-test",revision="abc123",go_version="go1.test"}'
+      - series: 'cubit_build_info{job="node",instance="edge",version="v0.0.0-test",revision="abc123",go_version="go1.test"}'
         values: '1x5'
-      - series: 'cubit_root_info{instance="edge",root="projects",mode="target-dir"}'
+      - series: 'cubit_root_info{job="node",instance="edge",root="projects",mode="target-dir"}'
         values: '1x5'
-      - series: 'cubit_scan_last_success_timestamp_seconds{instance="edge",root="projects"}'
+      - series: 'cubit_scan_last_success_timestamp_seconds{job="node",instance="edge",root="projects"}'
         values: '100x5'
+      # The same metrics from another scrape job: a host's other exporter, or a stale
+      # target. Nothing below may pick them up.
+      - series: 'cubit_build_info{job="other",instance="ghost",version="v0.0.0-test",revision="abc123",go_version="go1.test"}'
+        values: '1x5'
+      - series: 'cubit_root_info{job="other",instance="lab",root="ghost",mode="sccache"}'
+        values: '1x5'
+      - series: 'cubit_root_bytes{job="other",instance="lab",root="ghost"}'
+        values: '999x5'
+      - series: 'cubit_scan_success{job="other",instance="lab",root="ghost"}'
+        values: '1x5'
+      - series: 'cubit_scan_partial{job="other",instance="lab",root="ghost"}'
+        values: '1x5'
+      - series: 'cubit_scan_last_success_timestamp_seconds{job="other",instance="lab",root="ghost"}'
+        values: '299x5'
+      - series: 'cubit_workspace_target_bytes{job="other",instance="lab",root="ghost",workspace="huge"}'
+        values: '999x5'
+      - series: 'cubit_cache_bytes{job="other",instance="lab",root="ghost",kind="git-db"}'
+        values: '999x5'
+      - series: 'node_textfile_mtime_seconds{job="other",instance="lab",file="/var/lib/node_exporter/text/cubit.prom"}'
+        values: '299x5'
+      - series: 'node_textfile_mtime_seconds{job="other",instance="ghost",file="/var/lib/node_exporter/text/cubit.prom"}'
+        values: '299x5'
     promql_expr_test:
-      - expr: group by (instance) (cubit_build_info)
+      - expr: group by (instance) (cubit_build_info{job="node"})
         eval_time: 5m
         exp_samples:
           - labels: '{instance="edge"}'
             value: 1
           - labels: '{instance="lab"}'
             value: 1
-      - expr: max by (instance) (cubit_scan_last_success_timestamp_seconds)
+      - expr: max by (instance) (cubit_scan_last_success_timestamp_seconds{job="node"})
         eval_time: 5m
         exp_samples:
           - labels: '{instance="edge"}'
             value: 100
           - labels: '{instance="lab"}'
             value: 250
-      - expr: cubit_root_info
+      - expr: cubit_root_info{job="node"}
         eval_time: 5m
         exp_samples:
-          - labels: 'cubit_root_info{instance="edge",root="projects",mode="target-dir"}'
+          - labels: 'cubit_root_info{job="node",instance="edge",root="projects",mode="target-dir"}'
             value: 1
-          - labels: 'cubit_root_info{instance="lab",root="cargo",mode="cargo-home"}'
+          - labels: 'cubit_root_info{job="node",instance="lab",root="cargo",mode="cargo-home"}'
             value: 1
-          - labels: 'cubit_root_info{instance="lab",root="projects",mode="workspace-root"}'
+          - labels: 'cubit_root_info{job="node",instance="lab",root="projects",mode="workspace-root"}'
             value: 1
-      - expr: cubit_root_bytes
+      - expr: cubit_root_bytes{job="node"}
         eval_time: 5m
         exp_samples:
-          - labels: 'cubit_root_bytes{instance="lab",root="cargo"}'
+          - labels: 'cubit_root_bytes{job="node",instance="lab",root="cargo"}'
             value: 90
-          - labels: 'cubit_root_bytes{instance="lab",root="projects"}'
+          - labels: 'cubit_root_bytes{job="node",instance="lab",root="projects"}'
             value: 280
-      - expr: cubit_scan_success
+      - expr: cubit_scan_success{job="node"}
         eval_time: 5m
         exp_samples:
-          - labels: 'cubit_scan_success{instance="lab",root="cargo"}'
+          - labels: 'cubit_scan_success{job="node",instance="lab",root="cargo"}'
             value: 0
-          - labels: 'cubit_scan_success{instance="lab",root="projects"}'
+          - labels: 'cubit_scan_success{job="node",instance="lab",root="projects"}'
             value: 1
-      - expr: cubit_scan_partial
+      - expr: cubit_scan_partial{job="node"}
         eval_time: 5m
         exp_samples:
-          - labels: 'cubit_scan_partial{instance="lab",root="cargo"}'
+          - labels: 'cubit_scan_partial{job="node",instance="lab",root="cargo"}'
             value: 0
-          - labels: 'cubit_scan_partial{instance="lab",root="projects"}'
+          - labels: 'cubit_scan_partial{job="node",instance="lab",root="projects"}'
             value: 1
-      # Seven workspaces in, the five largest out; a name with a slash survives.
-      - expr: topk by (instance, root) (5, cubit_workspace_target_bytes)
+      # The page's query: every labelled workspace of every root. Vigil sorts by bytes
+      # descending, then name ascending, and cuts at five itself, so the cut is
+      # deterministic at a tie. A name with a slash survives.
+      - expr: cubit_workspace_target_bytes{job="node"}
         eval_time: 5m
         exp_samples:
-          - labels: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="libs/w6"}'
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="libs/w6"}'
             value: 60
-          - labels: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="w3"}'
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w1"}'
+            value: 10
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w2"}'
+            value: 20
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w3"}'
             value: 30
-          - labels: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="w4"}'
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w4"}'
             value: 40
-          - labels: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="w5"}'
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w5"}'
             value: 50
-          - labels: 'cubit_workspace_target_bytes{instance="lab",root="projects",workspace="w7"}'
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w7"}'
             value: 70
-      - expr: cubit_cache_bytes
+      # An illustration only, not a query the page uses: topk would cut at five in
+      # Prometheus, but it leaves ties at the cut arbitrary.
+      - expr: topk by (instance, root) (5, cubit_workspace_target_bytes{job="node"})
         eval_time: 5m
         exp_samples:
-          - labels: 'cubit_cache_bytes{instance="lab",root="cargo",kind="cargo-bin"}'
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="libs/w6"}'
+            value: 60
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w3"}'
             value: 30
-          - labels: 'cubit_cache_bytes{instance="lab",root="cargo",kind="git-db"}'
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w4"}'
+            value: 40
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w5"}'
+            value: 50
+          - labels: 'cubit_workspace_target_bytes{job="node",instance="lab",root="projects",workspace="w7"}'
+            value: 70
+      - expr: cubit_cache_bytes{job="node"}
+        eval_time: 5m
+        exp_samples:
+          - labels: 'cubit_cache_bytes{job="node",instance="lab",root="cargo",kind="cargo-bin"}'
+            value: 30
+          - labels: 'cubit_cache_bytes{job="node",instance="lab",root="cargo",kind="git-db"}'
             value: 60
       # Freshness: 300 s into the test, lab's newest success was at 250 s and edge's at 100 s.
-      - expr: time() - max by (instance) (cubit_scan_last_success_timestamp_seconds)
+      - expr: time() - max by (instance) (cubit_scan_last_success_timestamp_seconds{job="node"})
         eval_time: 5m
         exp_samples:
           - labels: '{instance="edge"}'
@@ -134,7 +180,7 @@ tests:
           - labels: '{instance="lab"}'
             value: 50
       # Only lab has a textfile series; the other file in the directory is ignored.
-      - expr: time() - max by (instance) (node_textfile_mtime_seconds{file=~".*cubit\\.prom"})
+      - expr: time() - max by (instance) (node_textfile_mtime_seconds{job="node",file=~".*cubit\\.prom"})
         eval_time: 5m
         exp_samples:
           - labels: '{instance="lab"}'
