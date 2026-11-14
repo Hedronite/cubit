@@ -25,6 +25,7 @@ Direct: `github.com/santhosh-tekuri/jsonschema/v6`, `github.com/spf13/cobra`, `g
 | promtool (Prometheus) | `3.16.0`, archive pinned by sha256 | `ci.yml` (`rules`) |
 | gitleaks | `8.30.1`, archive pinned by sha256 | `ci.yml` (`scrub`) |
 | cyclonedx-gomod | `v1.12.0` | `release.yml` only; not a module dependency |
+| benchstat (`golang.org/x/perf`) | `v0.0.0-20261009192801-be2c69fb417e` | by hand, for `docs/performance.md`; CI does not run it |
 
 ## GitHub Actions
 
