@@ -25,6 +25,7 @@ go test -race ./...
 golangci-lint run
 promtool test rules examples/rules/cubit.rules.test.yml
 scripts/scrub.sh
+scripts/reproduce.sh      # the release builds twice to the same bytes
 ```
 
 CI runs all of these. The tests include a contract suite (`internal/contract`) that keeps the schemas, the metric table, the refuse list and the example rules in agreement. If you change one, change the others in the same pull request.
@@ -39,6 +40,10 @@ CI runs all of these. The tests include a contract suite (`internal/contract`) t
 - **Strict decoding.** An unknown config key is an error, not a warning.
 - Error messages name the file and field, show a one-line excerpt, and end with the fix.
 
+## Pins
+
+Dependabot is declined. A pin (the Go release, a tool, a GitHub Action) moves by hand, in the same pull request that updates [docs/versions.md](docs/versions.md); tests check that the two agree and that every action is pinned to a full commit SHA.
+
 ## Pull requests
 
-Open a draft pull request from a branch. Do not push to `main`, and do not force-push a branch under review: push a new commit, or a new branch.
+Open a pull request from a branch. Do not push to `main`, and do not force-push a branch under review: push a new commit, or a new branch.
