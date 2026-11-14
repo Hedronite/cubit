@@ -36,7 +36,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: relhelper archive|sums ...")
+		return errors.New("usage: relhelper archive|sums, see the package comment")
 	}
 	switch args[0] {
 	case "archive":
@@ -140,7 +140,7 @@ func writeArchive(out, dir string, mtime time.Time, specs []string) error {
 }
 
 func addFile(tw *tar.Writer, hdr func(string, int64, int64, byte) *tar.Header, dir string, m member) error {
-	in, err := os.Open(m.src) //nolint:gosec // the release script names its inputs
+	in, err := os.Open(m.src)
 	if err != nil {
 		return err
 	}
