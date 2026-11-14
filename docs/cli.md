@@ -208,7 +208,7 @@ One writer per directory: Cubit takes a non-blocking `flock` on `.cubit.prom.loc
 node_exporter --collector.textfile.directory=/var/lib/node_exporter/text
 ```
 
-Exit codes still apply: 4 (preflight) and 7 (write failure) land in the stderr log; 0 to 2 are normal scan outcomes. The example growth rules use the error counters, so they are written for `serve`; with cron mode, guard growth on `max_over_time(cubit_scan_partial[24h]) == 0` instead.
+Exit codes still apply: 4 (preflight) and 7 (write failure) land in the stderr log; 0 to 2 are normal scan outcomes. The example growth rules in `examples/rules/cubit.rules.yml` use the error counters, so they are written for `serve`. For cron mode use `examples/rules/cubit-cron.rules.yml`: growth held on `max_over_time(cubit_scan_partial[24h]) == 0`, a cap told from an unreadable subtree by the skip counts, and a staleness alert on node_exporter's `node_textfile_mtime_seconds` for `cubit.prom`, since a dead cron leaves a fresh-looking last file.
 
 ## Things `serve` does not do
 

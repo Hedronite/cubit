@@ -54,7 +54,6 @@ Beyond the schema, and all at once rather than stopping at the first error, each
 - two roots that resolve to the same real path;
 - two `names` entries that declare the same slug, or a declared slug equal to a derived label;
 - `scan.interval` under 30s, or a root's `max_duration` at or above it;
-- a textfile directory whose temp file would land on another filesystem;
 - a `workspace-root` whose top level looks like a target dir (`debug/` or `release/` present): a warning that suggests `mode: target-dir`. `mode` is always required; Cubit never guesses it. A scan that finds no workspaces under a `workspace-root` reports a `no_workspaces` warning for the same reason.
 
 `validate` also prints each root's resolved mode, so the operator sees what Cubit will do.
