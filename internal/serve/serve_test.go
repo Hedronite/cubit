@@ -12,12 +12,14 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/Hedronite/cubit/internal/config"
 	"github.com/Hedronite/cubit/internal/contain"
 	"github.com/Hedronite/cubit/internal/scan"
+	"github.com/Hedronite/cubit/internal/textfile"
 	"github.com/Hedronite/cubit/internal/version"
 )
 
@@ -537,5 +539,164 @@ func TestCancelDuringAScanPublishesNothing(t *testing.T) {
 	}
 	if strings.Contains(r.log.String(), "scan finished") {
 		t.Error("no scan finished")
+	}
+}
+
+// failingListener accepts nothing: every Accept returns a permanent error.
+type failingListener struct{ net.Listener }
+
+func (failingListener) Accept() (net.Conn, error) { return nil, errors.New("accept failed for good") }
+
+// If the HTTP server dies, Run must return its error, not wait for a scan loop
+// that only a canceled context would stop. A supervisor can restart a process
+// that exits; it cannot restart one that hangs.
+func TestRunReturnsWhenTheServerFails(t *testing.T) {
+	d := tree(t)
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(context.Background(), Options{
+			Spec: spec(t, wsRoot("p", d)), Addr: "127.0.0.1:0", Interval: time.Minute,
+			Wait: func(time.Duration) time.Duration { return time.Hour },
+			Listen: func(addr string) (net.Listener, error) {
+				l, err := net.Listen("tcp", addr)
+				return failingListener{l}, err
+			},
+		})
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "accept failed for good") {
+			t.Errorf("Run returned %v, want the server's error", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run hung after the server failed")
+	}
+}
+
+type memSink struct {
+	mu   sync.Mutex
+	last []byte
+	n    int
+	err  error
+}
+
+func (m *memSink) Write(b []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.n++
+	if m.err != nil {
+		return m.err
+	}
+	m.last = append([]byte(nil), b...)
+	return nil
+}
+
+// The textfile holds exactly the bytes /metrics serves for the same scan.
+func TestTextfileIsTheSameBytesAsMetrics(t *testing.T) {
+	d := tree(t)
+	dir := t.TempDir()
+	tw, err := textfile.Open(dir, "/h", spec(t).Refuse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tw.Close()
+	r := start(t, Options{Spec: spec(t, wsRoot("p", d)), Textfile: tw, Wait: func(time.Duration) time.Duration { return time.Hour }}, slog.LevelDebug)
+	r.waitScan(t)
+	_, body := r.get(t, "GET", "/metrics")
+	file, err := os.ReadFile(filepath.Join(dir, textfile.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(body, "\n") || len(file) == 0 {
+		t.Error("the exposition ends in a newline")
+	}
+	if string(file) != body {
+		t.Errorf("cubit.prom differs from /metrics:\n--- file\n%s\n--- metrics\n%s", file, body)
+	}
+	if !strings.Contains(body, "cubit_root_bytes") {
+		t.Error("the file holds the finished scan, not the pre-scan snapshot")
+	}
+	if !strings.Contains(r.log.String(), `msg="textfile written" file=cubit.prom bytes=`) {
+		t.Errorf("debug line:\n%s", r.log.String())
+	}
+	if strings.Contains(r.log.String(), dir) {
+		t.Error("the directory reached the log")
+	}
+}
+
+// A failed write is logged on the first failure and again on recovery, not every
+// interval, with the errno and a hint but no path; serve keeps serving and the
+// next scan retries.
+func TestAFailedTextfileWriteDoesNotStopServe(t *testing.T) {
+	d := tree(t)
+	sink := &memSink{err: &textfile.WriteError{Op: "cannot create the temp file", Err: syscall.ENOSPC}}
+	r := start(t, Options{Spec: spec(t, wsRoot("p", d)), Textfile: sink, Wait: func(time.Duration) time.Duration { return 10 * time.Millisecond }}, slog.LevelInfo)
+	for i := 0; i < 3; i++ {
+		r.waitScan(t)
+	}
+	if resp, _ := r.get(t, "GET", "/healthz"); resp.StatusCode != http.StatusOK {
+		t.Error("serve stopped")
+	}
+	if _, body := r.get(t, "GET", "/metrics"); !strings.Contains(body, "cubit_root_bytes") {
+		t.Error("/metrics must not depend on the file")
+	}
+	sink.mu.Lock()
+	sink.err = nil
+	sink.mu.Unlock()
+	for i := 0; i < 3; i++ {
+		r.waitScan(t)
+	}
+	sink.mu.Lock()
+	ok := len(sink.last) > 0
+	sink.mu.Unlock()
+	if !ok {
+		t.Error("the next scan did not retry the write")
+	}
+	var errs, rec []map[string]string
+	for _, l := range logLines(r.log.String()) {
+		switch l["msg"] {
+		case "textfile write failed":
+			errs = append(errs, l)
+		case "textfile write recovered":
+			rec = append(rec, l)
+		}
+	}
+	if len(errs) != 1 || len(rec) != 1 {
+		t.Fatalf("want one failure line and one recovery line, got %d and %d:\n%s", len(errs), len(rec), r.log.String())
+	}
+	if keys(errs[0]) != "errno,file,hint" || errs[0]["errno"] != "ENOSPC" || errs[0]["file"] != "cubit.prom" || errs[0]["level"] != "ERROR" {
+		t.Errorf("error line: %v", errs[0])
+	}
+}
+
+type movingSink struct {
+	memSink
+	moved bool
+}
+
+func (m *movingSink) Moved() bool { return m.moved }
+
+// If the directory is replaced under a long-running serve, say so once.
+func TestServeWarnsOnceWhenTheTextfileDirectoryMoves(t *testing.T) {
+	d := tree(t)
+	sink := &movingSink{moved: true}
+	r := start(t, Options{Spec: spec(t, wsRoot("p", d)), Textfile: sink, Wait: func(time.Duration) time.Duration { return 10 * time.Millisecond }}, slog.LevelInfo)
+	for i := 0; i < 3; i++ {
+		r.waitScan(t)
+	}
+	n := 0
+	for _, l := range logLines(r.log.String()) {
+		if strings.HasPrefix(l["msg"], "the textfile directory was replaced or moved") {
+			n++
+			if l["level"] != "WARN" || l["hint"] == "" {
+				t.Errorf("%v", l)
+			}
+		}
+	}
+	if n != 1 {
+		t.Errorf("want one warning, got %d", n)
+	}
+	if sink.n == 0 {
+		t.Error("writes continue to the pinned directory")
 	}
 }

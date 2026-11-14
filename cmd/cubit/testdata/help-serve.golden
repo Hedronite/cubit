@@ -6,6 +6,9 @@ only. /healthz is 200 while the config is valid and the process is
 serving; it never touches the scanner. Scans run on an interval
 (default 5m), one in flight at a time.
 
+With --textfile-dir DIR, the same bytes /metrics serves are also
+written to cubit.prom in DIR after every scan.
+
 The metrics endpoint is unauthenticated. The bind address must be a
 loopback address; anything wider requires --unsafe-listen, which logs
 one warning with the bound address.
@@ -14,10 +17,11 @@ Usage:
   cubit serve [flags]
 
 Flags:
-  -h, --help              help for serve
-      --listen ADDR       listen on ADDR (default "127.0.0.1:9101")
-      --log-level LEVEL   log LEVEL: debug, info, warn or error (default "info")
-      --unsafe-listen     allow a non-loopback bind (the metrics endpoint is unauthenticated)
+  -h, --help               help for serve
+      --listen ADDR        listen on ADDR (default "127.0.0.1:9101")
+      --log-level LEVEL    log LEVEL: debug, info, warn or error (default "info")
+      --textfile-dir DIR   rewrite cubit.prom in DIR after every scan (node_exporter textfile format)
+      --unsafe-listen      allow a non-loopback bind (the metrics endpoint is unauthenticated)
 
 Global Flags:
       --config string   config file (default "cubit.yaml")

@@ -1,12 +1,16 @@
 Scan every configured root once, print the result, and exit.
 Human table by default; --json prints cubit.scan/v0 alone on stdout.
+With --textfile-dir DIR, also write cubit.prom (node_exporter
+textfile format) after the scan. The directory must already exist
+and sit outside the refuse list; Cubit never creates it.
 
 Usage:
   cubit scan [flags]
 
 Flags:
-  -h, --help   help for scan
-      --json   print cubit.scan/v0 instead of the human table
+  -h, --help               help for scan
+      --json               print cubit.scan/v0 instead of the human table
+      --textfile-dir DIR   write cubit.prom into DIR after the scan (node_exporter textfile format)
 
 Global Flags:
       --config string   config file (default "cubit.yaml")

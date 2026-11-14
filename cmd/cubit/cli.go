@@ -17,6 +17,7 @@ import (
 	"github.com/Hedronite/cubit/internal/report"
 	"github.com/Hedronite/cubit/internal/scan"
 	"github.com/Hedronite/cubit/internal/serve"
+	"github.com/Hedronite/cubit/internal/textfile"
 	"github.com/Hedronite/cubit/internal/version"
 )
 
@@ -26,6 +27,9 @@ const (
 	exitConfig   = 4
 	exitServe    = 5
 	exitInternal = 6
+	// exitTextfile: `scan --textfile-dir` could not write cubit.prom after the
+	// scan. The document is still printed. It is not 6, which means a bug.
+	exitTextfile = 7
 )
 
 // exitError carries an exit code out of a command.
@@ -139,11 +143,15 @@ func errReason(err error) string {
 
 func scanCmd(configFile *string, stdout, stderr io.Writer) *cobra.Command {
 	var asJSON bool
+	var textfileDir string
 	c := &cobra.Command{
 		Use:   "scan",
 		Short: "Scan configured roots once and print the result",
 		Long: `Scan every configured root once, print the result, and exit.
-Human table by default; --json prints cubit.scan/v0 alone on stdout.`,
+Human table by default; --json prints cubit.scan/v0 alone on stdout.
+With --textfile-dir DIR, also write cubit.prom (node_exporter
+textfile format) after the scan. The directory must already exist
+and sit outside the refuse list; Cubit never creates it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, _, err := load(*configFile, stderr, false)
@@ -154,6 +162,16 @@ Human table by default; --json prints cubit.scan/v0 alone on stdout.`,
 			if err != nil {
 				return &exitError{exitConfig, err.Error()}
 			}
+			var tw *textfile.Writer
+			if textfileDir != "" {
+				if tw, err = openTextfile(textfileDir, spec, exitConfig); err != nil {
+					return err
+				}
+				defer func() { _ = tw.Close() }()
+				for _, w := range tw.Warnings {
+					fmt.Fprintf(stderr, "cubit: warning: --textfile-dir %s: %s\n", textfileDir, w)
+				}
+			}
 			ctx, which, stop := watchSignals(context.Background())
 			defer stop()
 			doc, err := scan.Scan(ctx, spec, scan.Env{})
@@ -162,6 +180,19 @@ Human table by default; --json prints cubit.scan/v0 alone on stdout.`,
 					return &exitError{exitForSignal(sig), "interrupted"}
 				}
 				return &exitError{exitInternal, err.Error()}
+			}
+			// The file is written before the result is printed, so a failure shows
+			// first on stderr, and the document on stdout stays whole either way.
+			writeFailed := false
+			if tw != nil {
+				body, err := oneShotMetrics(spec, doc)
+				if err == nil {
+					err = tw.Write(body)
+				}
+				if err != nil {
+					writeFailed = true
+					fmt.Fprintf(stderr, "cubit: %s\n", writeFailure(textfileDir, err))
+				}
 			}
 			if asJSON {
 				b, err := doc.JSON()
@@ -172,10 +203,14 @@ Human table by default; --json prints cubit.scan/v0 alone on stdout.`,
 			} else {
 				report.Table(stdout, doc, *configFile)
 			}
+			if writeFailed {
+				return exitCode(exitTextfile)
+			}
 			return exitCode(doc.ExitCode())
 		},
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "print cubit.scan/v0 instead of the human table")
+	c.Flags().StringVar(&textfileDir, "textfile-dir", "", "write cubit.prom into `DIR` after the scan (node_exporter textfile format)")
 	return c
 }
 
@@ -255,7 +290,7 @@ func versionCmd(stdout io.Writer) *cobra.Command {
 }
 
 func serveCmd(configFile *string, stderr io.Writer) *cobra.Command {
-	var listen, level string
+	var listen, level, textfileDir string
 	var unsafe bool
 	c := &cobra.Command{
 		Use:   "serve",
@@ -267,6 +302,9 @@ before the first scan finishes it serves build info and zero counters
 only. /healthz is 200 while the config is valid and the process is
 serving; it never touches the scanner. Scans run on an interval
 (default 5m), one in flight at a time.
+
+With --textfile-dir DIR, the same bytes /metrics serves are also
+written to cubit.prom in DIR after every scan.
 
 The metrics endpoint is unauthenticated. The bind address must be a
 loopback address; anything wider requires --unsafe-listen, which logs
@@ -285,13 +323,27 @@ one warning with the bound address.`,
 			if err != nil {
 				return &exitError{exitConfig, err.Error()}
 			}
+			var tw *textfile.Writer
+			if textfileDir != "" {
+				if tw, err = openTextfile(textfileDir, spec, exitServe); err != nil {
+					return err
+				}
+				defer func() { _ = tw.Close() }()
+			}
 			log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: lvl}))
 			spec.Log = log
+			if tw != nil {
+				for _, w := range tw.Warnings {
+					log.Warn("the textfile directory is open to more writers than it should be", "detail", w,
+						"hint", "restrict the directory to the user running cubit and the user reading it")
+				}
+			}
 			ctx, _, stop := watchSignals(context.Background())
 			defer stop()
 			err = serve.Run(ctx, serve.Options{
 				Spec: spec, Interval: cfg.EffectiveInterval(), Addr: listen, Unsafe: unsafe,
 				ConfigName: filepath.Base(*configFile), Log: log, Info: version.Get(),
+				Textfile: textfileSink(tw),
 			})
 			var refused *serve.RefusedError
 			var lerr *serve.ListenError
@@ -307,6 +359,7 @@ one warning with the bound address.`,
 	c.Flags().StringVar(&listen, "listen", "127.0.0.1:9101", "listen on `ADDR`")
 	c.Flags().BoolVar(&unsafe, "unsafe-listen", false, "allow a non-loopback bind (the metrics endpoint is unauthenticated)")
 	c.Flags().StringVar(&level, "log-level", "info", "log `LEVEL`: debug, info, warn or error")
+	c.Flags().StringVar(&textfileDir, "textfile-dir", "", "rewrite cubit.prom in `DIR` after every scan (node_exporter textfile format)")
 	return c
 }
 
@@ -322,4 +375,12 @@ func parseLevel(s string) (slog.Level, error) {
 		return slog.LevelError, nil
 	}
 	return 0, fmt.Errorf("--log-level %q is not one of debug, info, warn, error", s)
+}
+
+// textfileSink adapts a Writer for serve; a nil Writer is no sink.
+func textfileSink(w *textfile.Writer) serve.Sink {
+	if w == nil {
+		return nil
+	}
+	return w
 }

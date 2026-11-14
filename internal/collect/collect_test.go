@@ -480,3 +480,34 @@ func TestHelpTextIsEscaped(t *testing.T) {
 		t.Errorf("%q", got)
 	}
 }
+
+// A textfile from a one-shot scan carries gauges only: the counters are
+// process-scoped, so a file written by a fresh process would reset them on every
+// run. Everything else is the same bytes as the full snapshot.
+func TestGaugesLeaveOutTheCountersAndNothingElse(t *testing.T) {
+	c := New(info, []string{"example-cargo-home", "example-projects", "example-shared-target"})
+	mustUpdate(t, c, exampleDoc(t), t0)
+	full := string(c.Metrics())
+	g := string(c.Gauges())
+	if strings.Contains(g, "cubit_scans_total") || strings.Contains(g, "cubit_scan_errors_total") {
+		t.Error("counters in a gauges-only render")
+	}
+	var want []string
+	skip := false
+	for _, l := range strings.Split(strings.TrimRight(full, "\n"), "\n") {
+		if strings.HasPrefix(l, "# HELP cubit_scans_total") || strings.HasPrefix(l, "# HELP cubit_scan_errors_total") {
+			skip = true
+		} else if strings.HasPrefix(l, "# HELP ") {
+			skip = false
+		}
+		if !skip {
+			want = append(want, l)
+		}
+	}
+	if g != strings.Join(want, "\n")+"\n" {
+		t.Errorf("gauges differ from the snapshot minus its counters:\n%s", g)
+	}
+	if !strings.HasSuffix(g, "\n") {
+		t.Error("ends in a newline")
+	}
+}

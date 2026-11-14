@@ -15,6 +15,8 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/Hedronite/cubit/internal/contain"
+	"github.com/Hedronite/cubit/internal/textfile"
 	"github.com/Hedronite/cubit/schemas"
 )
 
@@ -324,5 +326,156 @@ func TestValidateJSONIsTheDocumentOfItsSchema(t *testing.T) {
 		if !strings.Contains(out, `"schema": "cubit.validate/v0"`) {
 			t.Errorf("%s: no schema field", name)
 		}
+	}
+}
+
+func tfConfig(t *testing.T) (cfg, tree string) {
+	t.Helper()
+	tree = t.TempDir()
+	os.MkdirAll(filepath.Join(tree, "app", "target", "debug"), 0o755)
+	os.WriteFile(filepath.Join(tree, "app", "Cargo.toml"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(tree, "app", "target", "debug", "f"), make([]byte, 50000), 0o644)
+	return writeCfg(t, "schema: cubit.config/v0\nroots:\n  - {alias: p, path: "+tree+", mode: workspace-root}\n  - {alias: gone, path: "+tree+"-missing, mode: sccache}\n"), tree
+}
+
+func TestScanWritesTheTextfileAndStillPrintsTheDocument(t *testing.T) {
+	cfg, tree := tfConfig(t)
+	dir := t.TempDir()
+	code, out, errOut := exec(t, "scan", "--json", "--config", cfg, "--textfile-dir", dir)
+	if code != 1 || !strings.Contains(out, `"schema": "cubit.scan/v0"`) {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "cubit.prom"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := string(b)
+	for _, want := range []string{`cubit_root_bytes{root="p"}`, `cubit_scan_success{root="gone"} 0`, `cubit_build_info`} {
+		if !strings.Contains(f, want) {
+			t.Errorf("cubit.prom lacks %q", want)
+		}
+	}
+	for _, counter := range []string{"cubit_scans_total", "cubit_scan_errors_total"} {
+		if strings.Contains(f, counter) {
+			t.Errorf("%s is process-scoped; a file from a one-shot scan would reset it on every run", counter)
+		}
+	}
+	if strings.Contains(f, `cubit_root_bytes{root="gone"}`) {
+		t.Error("cron mode has no last good values: a failed root publishes health series only")
+	}
+	if strings.Contains(f, tree) {
+		t.Error("a path in the file")
+	}
+	fi, _ := os.Stat(filepath.Join(dir, "cubit.prom"))
+	if fi.Mode().Perm() != 0o644 {
+		t.Errorf("mode %v", fi.Mode().Perm())
+	}
+}
+
+func TestTextfilePreflightIsExit4AndScansNothing(t *testing.T) {
+	cfg, _ := tfConfig(t)
+	base := t.TempDir()
+	file := filepath.Join(base, "afile")
+	os.WriteFile(file, nil, 0o644)
+	ssh := filepath.Join(base, ".ssh")
+	os.Mkdir(ssh, 0o755)
+	for name, c := range map[string]struct{ dir, want string }{
+		"missing":   {filepath.Join(base, "nope"), "no such directory; create it first (cubit never creates directories)"},
+		"not a dir": {file, "not a directory; pass the directory node_exporter reads, not a file"},
+		"refused":   {ssh, "sits inside a builtin refuse-list prefix; choose a directory outside every refused prefix"},
+	} {
+		code, out, errOut := exec(t, "scan", "--config", cfg, "--textfile-dir", c.dir)
+		if code != 4 || out != "" || !strings.Contains(errOut, c.want) {
+			t.Errorf("%s: exit %d stdout %q stderr %q", name, code, out, errOut)
+		}
+		if name == "refused" && (strings.Contains(errOut, ".ssh") || strings.Count(errOut, "\ncubit: ")+boolInt(strings.HasPrefix(errOut, "cubit: ")) != 1) {
+			t.Errorf("a refused place is named by class only, on one line: %q", errOut)
+		}
+		if names, _ := os.ReadDir(ssh); name == "refused" && len(names) != 0 {
+			t.Error("something was created in a refused directory")
+		}
+	}
+}
+
+func TestScanTextfileLockedIsExit4(t *testing.T) {
+	cfg, _ := tfConfig(t)
+	dir := t.TempDir()
+	w, err := textfile.Open(dir, "/h", mustRefuser(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	code, out, errOut := exec(t, "scan", "--config", cfg, "--textfile-dir", dir)
+	if code != 4 || out != "" || !strings.Contains(errOut, "another cubit holds the textfile lock") {
+		t.Errorf("%d %q %q", code, out, errOut)
+	}
+}
+
+func mustRefuser(t *testing.T) *contain.Refuser {
+	t.Helper()
+	r, err := contain.NewRefuser("/nonexistent-home", nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// A write that fails after the scan is exit 7, with the whole document on
+// stdout and the failure on stderr: it never hides a result and never reads as success.
+func TestAWriteFailureAfterTheScanIsExit7WithTheDocument(t *testing.T) {
+	cfg, _ := tfConfig(t)
+	dir := t.TempDir()
+	// A non-empty directory where the temp file goes: preflight passes, and the
+	// write cannot remove it.
+	if err := os.MkdirAll(filepath.Join(dir, ".cubit.prom.tmp", "inner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := exec(t, "scan", "--json", "--config", cfg, "--textfile-dir", dir)
+	if code != 7 {
+		t.Errorf("exit %d, want 7 (not 6, which means a bug)", code)
+	}
+	if !strings.Contains(out, `"schema": "cubit.scan/v0"`) || !strings.HasSuffix(out, "}\n") {
+		t.Errorf("the document must be whole on stdout:\n%s", out)
+	}
+	if !strings.Contains(errOut, "cubit: failed to write cubit.prom in "+dir+": ") || !strings.Contains(errOut, "the scan result is still valid") {
+		t.Errorf("stderr: %q", errOut)
+	}
+}
+
+func TestServeTextfilePreflightIsExit5(t *testing.T) {
+	d := t.TempDir()
+	cfg := writeCfg(t, "schema: cubit.config/v0\nroots:\n  - {alias: p, path: "+d+", mode: sccache}\n")
+	code, out, errOut := exec(t, "serve", "--config", cfg, "--textfile-dir", filepath.Join(d, "nope"), "--listen", "127.0.0.1:0")
+	if code != 5 || out != "" || !strings.Contains(errOut, "no such directory") || strings.Count(errOut, "\n") != 1 {
+		t.Errorf("%d %q %q", code, out, errOut)
+	}
+	dir := t.TempDir()
+	w, err := textfile.Open(dir, "/h", mustRefuser(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	code, _, errOut = exec(t, "serve", "--config", cfg, "--textfile-dir", dir, "--listen", "127.0.0.1:0")
+	if code != 5 || !strings.Contains(errOut, "another cubit holds the textfile lock") {
+		t.Errorf("a second writer: %d %q", code, errOut)
+	}
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func TestScanTextfileWorldWritableDirIsExit4(t *testing.T) {
+	cfg, _ := tfConfig(t)
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := exec(t, "scan", "--config", cfg, "--textfile-dir", dir)
+	if code != 4 || out != "" || !strings.Contains(errOut, "writable by everyone (mode 0777)") {
+		t.Errorf("%d %q %q", code, out, errOut)
 	}
 }
