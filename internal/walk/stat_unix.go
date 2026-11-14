@@ -16,9 +16,17 @@ func StatOf(fi fs.FileInfo) (Stat, bool) {
 		return Stat{}, false
 	}
 	return Stat{
-		Blocks: uint64(st.Blocks),
-		Dev:    uint64(st.Dev), //nolint:gosec // identity only, compared for equality
-		Ino:    st.Ino,
-		Nlink:  uint64(st.Nlink),
+		Blocks: u64(st.Blocks),
+		Dev:    u64(st.Dev),
+		Ino:    u64(st.Ino),
+		Nlink:  u64(st.Nlink),
 	}, true
+}
+
+// u64 widens a stat field. The fields are int32, uint16, uint32 or uint64
+// depending on the platform, so the conversion is written once, generically,
+// instead of being flagged as redundant on some platforms and needed on others.
+// Device and inode numbers are identities, compared only for equality.
+func u64[T ~int32 | ~int64 | ~uint16 | ~uint32 | ~uint64](v T) uint64 {
+	return uint64(v)
 }
