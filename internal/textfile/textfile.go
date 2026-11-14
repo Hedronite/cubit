@@ -124,21 +124,29 @@ func Open(dir, home string, ref *contain.Refuser) (*Writer, error) {
 	if class, bad := ref.Inside(contain.Components(abs)); bad {
 		return nil, &RefusedError{Class: class}
 	}
-	fi, statErr := os.Stat(abs) //nolint:gosec // the operator names the directory, and a refused one was turned away above
+	// Lstat, not Stat: a symlink is not followed here. Where it leads is checked
+	// against the refuse list by OpenRoot before anything touches it, and the
+	// opened directory itself is checked for being a directory below.
+	fi, statErr := os.Lstat(abs) //nolint:gosec // the operator names the directory, and a refused one was turned away above
 	switch {
-	case statErr == nil && !fi.IsDir():
-		return nil, ErrNotDir
 	case errors.Is(statErr, fs.ErrNotExist):
 		return nil, ErrNotExist
+	case statErr == nil && fi.Mode()&fs.ModeSymlink == 0 && !fi.IsDir():
+		return nil, ErrNotDir
 	}
 	root, real, err := contain.OpenRoot(abs, ref)
 	if err != nil {
 		switch {
 		case errors.Is(err, contain.ErrRefused):
-			return nil, &RefusedError{Class: refusedClass(abs, ref)}
+			class := "builtin"
+			var cr *contain.RefusedError
+			if errors.As(err, &cr) {
+				class = cr.Class
+			}
+			return nil, &RefusedError{Class: class}
 		case errors.Is(err, fs.ErrNotExist):
 			return nil, ErrNotExist
-		case errors.Is(err, syscall.ENOTDIR):
+		case errors.Is(err, syscall.ENOTDIR), Text(err) == "not a directory":
 			return nil, ErrNotDir
 		case errors.Is(err, fs.ErrPermission):
 			return nil, ErrNotWritable
@@ -212,19 +220,6 @@ func (w *Writer) Moved() bool {
 		return true
 	}
 	return !os.SameFile(now, pinned)
-}
-
-// refusedClass says which list refused abs, directly or through a symlink.
-func refusedClass(abs string, ref *contain.Refuser) string {
-	if c, bad := ref.Inside(contain.Components(abs)); bad {
-		return c
-	}
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		if c, bad := ref.Inside(contain.Components(real)); bad {
-			return c
-		}
-	}
-	return "builtin"
 }
 
 func absolute(dir, home string) (string, error) {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -96,7 +97,7 @@ func Check(c *Config, home string) []Finding {
 			add(Error, CodeRefusedRoot, at("path"), fmt.Sprintf("%s sits inside a %s refuse-list prefix", at("path"), class), "move the root out of every refused prefix; the walk will not read inside one.")
 			continue
 		}
-		real, err := filepath.EvalSymlinks(abs)
+		real, err := contain.ResolvePath(abs, ref)
 		switch {
 		case err == nil:
 			res[i].real = real
@@ -118,6 +119,9 @@ func Check(c *Config, home string) []Finding {
 			if r.Mode == WorkspaceRoot && looksLikeTarget(real) {
 				add(Warning, CodeLooksLikeTarget, at("mode"), fmt.Sprintf("%s '%s' is workspace-root but holds debug/ or release/ at the top level, so it looks like one target dir", at(""), r.Alias), "if so, set mode: target-dir.")
 			}
+		case errors.Is(err, contain.ErrRefused):
+			add(Error, CodeRefusedRoot, at("path"), fmt.Sprintf("%s resolves through a symlink into a refuse-list prefix", at("path")), "point the root at a path outside every refused prefix.")
+			continue
 		case os.IsNotExist(err):
 			add(Warning, CodeRootMissing, at("path"), fmt.Sprintf("%s '%s' does not exist now; a scan reports root_missing until it does", at(""), r.Alias), "")
 		default:

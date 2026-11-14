@@ -214,3 +214,73 @@ func FuzzRefuse(f *testing.F) {
 		}
 	})
 }
+
+// ResolvePath is EvalSymlinks with the refuse list in front of every stat.
+func TestResolvePath(t *testing.T) {
+	base := mk(t)
+	write(t, filepath.Join(base, "real", "sub", "f"), 1)
+	write(t, filepath.Join(base, "x", ".ssh", "key"), 1)
+	for name, target := range map[string]string{
+		"link":     "real",
+		"chain":    "link",
+		"rel":      "real/sub/../sub",
+		"tossh":    "x/.ssh",
+		"viatossh": "tossh",
+		"dangling": "x/.ssh/missing", // a refused name that does not exist
+		"loop":     "loop",
+		"abs":      filepath.Join(base, "real"),
+	} {
+		if err := os.Symlink(target, filepath.Join(base, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ref, _ := NewRefuser("/nonexistent-home", nil, "")
+	for _, name := range []string{"real", "link", "chain", "rel", "real/sub", "abs"} {
+		got, err := ResolvePath(filepath.Join(base, name), ref)
+		want, werr := filepath.EvalSymlinks(filepath.Join(base, name))
+		if err != nil || werr != nil || got != want {
+			t.Errorf("%s: %q %v, EvalSymlinks says %q %v", name, got, err, want, werr)
+		}
+	}
+	for _, name := range []string{"tossh", "viatossh", "dangling", "x/.ssh"} {
+		_, err := ResolvePath(filepath.Join(base, name), ref)
+		var re *RefusedError
+		if !errors.Is(err, ErrRefused) || !errors.As(err, &re) || re.Class != "builtin" {
+			t.Errorf("%s: %v, want a refusal", name, err)
+		}
+		if strings.Contains(err.Error(), ".ssh") {
+			t.Errorf("the refusal names a refused place: %q", err)
+		}
+	}
+	if _, err := ResolvePath(filepath.Join(base, "loop"), ref); !errors.Is(err, ErrLoop) {
+		t.Errorf("loop: %v", err)
+	}
+	if _, err := ResolvePath(filepath.Join(base, "nope"), ref); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing: %v", err)
+	}
+	if _, err := ResolvePath("relative", ref); err == nil {
+		t.Error("a relative path must be rejected")
+	}
+}
+
+// The refused target is never statted: with no search permission on its parent a
+// followed stat would fail with a permission error, and ResolvePath must say
+// refused instead.
+func TestResolvePathNeverStatsARefusedTarget(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permissions")
+	}
+	base := mk(t)
+	write(t, filepath.Join(base, "x", ".ssh", "key"), 1)
+	if err := os.Symlink(filepath.Join(base, "x", ".ssh"), filepath.Join(base, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(base, "x"), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(filepath.Join(base, "x"), 0o755) })
+	ref, _ := NewRefuser("/nonexistent-home", nil, "")
+	if _, err := ResolvePath(filepath.Join(base, "link"), ref); !errors.Is(err, ErrRefused) {
+		t.Errorf("%v, want a refusal and not a permission error", err)
+	}
+}

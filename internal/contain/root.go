@@ -38,7 +38,7 @@ func OpenRoot(path string, r *Refuser) (*os.Root, string, error) {
 	if _, bad := r.Inside(Components(filepath.Clean(path))); bad {
 		return nil, "", ErrRefused
 	}
-	real, err := filepath.EvalSymlinks(path)
+	real, err := ResolvePath(filepath.Clean(path), r)
 	if err != nil {
 		return nil, "", err
 	}
