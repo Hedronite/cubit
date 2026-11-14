@@ -13,8 +13,12 @@ import (
 
 	"github.com/Hedronite/cubit/internal/collect"
 	"github.com/Hedronite/cubit/internal/scan"
+	"github.com/Hedronite/cubit/internal/textfile"
 	"github.com/Hedronite/cubit/internal/version"
 )
+
+// Sink receives the exposition after every scan, for the textfile.
+type Sink interface{ Write([]byte) error }
 
 // Options is everything Run needs.
 type Options struct {
@@ -26,10 +30,13 @@ type Options struct {
 	ConfigName string // the config file's base name; a directory would be a path
 	Log        *slog.Logger
 	Info       version.Info
+	Textfile   Sink // nil: no textfile
 
 	// Wait returns how long to sleep before the next scan. Nil means the
 	// interval plus or minus 10%, uniformly.
 	Wait func(interval time.Duration) time.Duration
+	// Listen opens the listener. Nil means net.Listen on a TCP address. For tests.
+	Listen func(addr string) (net.Listener, error)
 	// OnListen is called once the listener is open, with its address. For tests.
 	OnListen func(addr string)
 	// OnScan is called after each scan has been folded into the collector. For tests.
@@ -50,10 +57,18 @@ func Run(ctx context.Context, o Options) error {
 	if err := CheckBind(ctx, o.Addr, o.Unsafe); err != nil {
 		return err
 	}
-	ln, err := listen(o.Addr)
+	open := o.Listen
+	if open == nil {
+		open = listen
+	}
+	ln, err := open(o.Addr)
 	if err != nil {
 		return err
 	}
+	// The scan loop ends when ctx does. Cancel it on every way out, so a failed
+	// server never leaves Run waiting for a loop nothing will stop.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
 	}
@@ -98,6 +113,7 @@ func Run(ctx context.Context, o Options) error {
 
 	select {
 	case err := <-serveErr:
+		cancel()
 		<-scanDone
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
@@ -105,8 +121,8 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	case <-ctx.Done():
 	}
-	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	shutdown, stopShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopShutdown()
 	err = srv.Shutdown(shutdown)
 	<-scanDone
 	o.Log.Info("stopped")
@@ -152,6 +168,7 @@ func handler(col *collect.Collector) http.Handler {
 
 // loop runs scans one at a time: the first at once, then after each wait.
 func loop(ctx context.Context, o Options, col *collect.Collector) {
+	var tf textfileState
 	for {
 		start := o.Env.Now()
 		doc, err := scan.Scan(ctx, o.Spec, o.Env)
@@ -161,7 +178,9 @@ func loop(ctx context.Context, o Options, col *collect.Collector) {
 		if err := col.Update(doc, o.Env.Now()); err != nil {
 			o.Log.Error("the scan could not be rendered; /metrics keeps the previous snapshot", "err", err.Error())
 		}
-		logScan(o, doc, o.Env.Now().Sub(start))
+		took := o.Env.Now().Sub(start) // before the textfile write: a slow disk is not scan time
+		writeTextfile(o, col, &tf)
+		logScan(o, doc, took)
 		if o.OnScan != nil {
 			o.OnScan(doc)
 		}
@@ -214,4 +233,53 @@ func logScan(o Options, doc *scan.Document, took time.Duration) {
 	}
 	o.Log.Info("scan finished", "duration", took.Round(time.Millisecond).String(), "result", result,
 		"roots_ok", ok, "roots_partial", partial, "roots_failed", failed)
+}
+
+// textfileState remembers what the last write said, so the log reports changes
+// and not every interval forever.
+type textfileState struct {
+	failed bool
+	moved  bool
+}
+
+// mover is an optional capability of a Sink: it can tell that its directory is
+// no longer the one its path names.
+type mover interface{ Moved() bool }
+
+// writeTextfile rewrites cubit.prom with the bytes /metrics serves. A failure
+// is logged on the first failure and again on recovery, not on every scan, and
+// the process goes on serving: /metrics does not depend on the file, and the
+// next scan writes it again from scratch. The line holds the errno and a
+// constant file name, never the directory.
+func writeTextfile(o Options, col *collect.Collector, st *textfileState) {
+	if o.Textfile == nil {
+		return
+	}
+	if m, ok := o.Textfile.(mover); ok {
+		if now := m.Moved(); now && !st.moved {
+			o.Log.Warn("the textfile directory was replaced or moved; cubit.prom is still written to the original directory",
+				"file", textfile.FileName, "hint", "node_exporter reads the path, not the old directory: restart cubit to follow the new one")
+			st.moved = now
+		} else if !now {
+			st.moved = false
+		}
+	}
+	body := col.Metrics()
+	if err := o.Textfile.Write(body); err != nil {
+		if !st.failed {
+			errno := textfile.Errno(err)
+			if errno == "" {
+				errno = "unknown"
+			}
+			o.Log.Error("textfile write failed", "file", textfile.FileName, "errno", errno,
+				"hint", "check the directory (disk full, permissions); /metrics is unaffected and the next scan retries")
+		}
+		st.failed = true
+		return
+	}
+	if st.failed {
+		o.Log.Info("textfile write recovered", "file", textfile.FileName)
+		st.failed = false
+	}
+	o.Log.Debug("textfile written", "file", textfile.FileName, "bytes", len(body))
 }

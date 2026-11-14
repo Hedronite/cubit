@@ -147,12 +147,27 @@ func (c *Collector) restore(sv saved) {
 	c.scans = sv.scans
 }
 
+// Gauges renders the current state without the two counter families. Counters
+// are process-scoped: a one-shot `scan` writes a file from a process that
+// lives for one scan, so its counters would restart at 0 or 1 every run and
+// read as a reset on every scrape. A textfile from a one-shot scan carries
+// gauges only.
+func (c *Collector) Gauges() []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	text, err := c.render(false)
+	if err != nil {
+		return nil
+	}
+	return []byte(text)
+}
+
 // Metrics returns the current snapshot. The slice is never modified after it is
 // published, so a caller may hold it, but must not change it.
 func (c *Collector) Metrics() []byte { return *c.snap.Load() }
 
 func (c *Collector) publish() error {
-	text, err := c.render()
+	text, err := c.render(true)
 	if err != nil {
 		return err
 	}
@@ -206,7 +221,7 @@ func b01(b bool) string {
 
 // render writes every family in the order docs/metrics.md lists them. Samples
 // inside a family are sorted by root, then by their other labels.
-func (c *Collector) render() (string, error) {
+func (c *Collector) render(withCounters bool) (string, error) {
 	fam := []*family{
 		{name: "cubit_workspace_target_bytes", typ: "gauge", help: "Allocated bytes under one workspace's target/."},
 		{name: "cubit_workspace_profile_bytes", typ: "gauge", help: "Workspace bytes split by build profile."},
@@ -271,12 +286,16 @@ func (c *Collector) render() (string, error) {
 		if st.good != nil {
 			by["cubit_scan_last_success_timestamp_seconds"].add(root, ftoa(float64(st.lastSuccess.UnixMilli())/1000))
 		}
-		for _, r := range reason.Error {
-			by["cubit_scan_errors_total"].add(join(root, label("reason", r)), strconv.FormatUint(st.errs[r], 10))
+		if withCounters {
+			for _, r := range reason.Error {
+				by["cubit_scan_errors_total"].add(join(root, label("reason", r)), strconv.FormatUint(st.errs[r], 10))
+			}
 		}
 	}
-	for _, r := range results {
-		by["cubit_scans_total"].add(label("result", r), strconv.FormatUint(c.scans[r], 10))
+	if withCounters {
+		for _, r := range results {
+			by["cubit_scans_total"].add(label("result", r), strconv.FormatUint(c.scans[r], 10))
+		}
 	}
 	by["cubit_build_info"].add(join(label("version", c.info.Version), label("revision", c.info.Revision), label("go_version", c.info.GoVersion)), "1")
 
