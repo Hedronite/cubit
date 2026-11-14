@@ -580,3 +580,41 @@ func TestMovedNoticesAReplacedDirectory(t *testing.T) {
 		t.Error("it must never fall back to writing by path")
 	}
 }
+
+// A symlink into a refused prefix is turned away without its target being
+// statted or opened: the refused name never reaches a syscall that follows it.
+func TestASymlinkIntoARefusedPrefixIsNeverStatted(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permissions")
+	}
+	d := tmpdir(t)
+	ssh := filepath.Join(d, "x", ".ssh")
+	if err := os.MkdirAll(ssh, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// No search permission on the refused directory: a stat that follows the link
+	// would fail with a permission error, not with ErrRefused.
+	if err := os.Chmod(filepath.Join(d, "x"), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(filepath.Join(d, "x"), 0o755) })
+	link := filepath.Join(d, "link")
+	if err := os.Symlink(ssh, link); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Open(link, "/h", refuser(t))
+	if !errors.Is(err, ErrRefused) {
+		t.Errorf("%v, want ErrRefused and not a permission error from following the link", err)
+	}
+}
+
+// A symlink to a file is not a directory, and says so.
+func TestASymlinkToAFileIsNotADirectory(t *testing.T) {
+	d := tmpdir(t)
+	f := filepath.Join(d, "afile")
+	os.WriteFile(f, nil, 0o644)
+	os.Symlink(f, filepath.Join(d, "link"))
+	if _, err := Open(filepath.Join(d, "link"), "/h", refuser(t)); !errors.Is(err, ErrNotDir) {
+		t.Errorf("%v", err)
+	}
+}

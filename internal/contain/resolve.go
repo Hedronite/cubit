@@ -80,3 +80,67 @@ func Resolve(top *os.Root, topComps []string, rel string, r *Refuser) (string, e
 	}
 	return strings.Join(resolved, "/"), nil
 }
+
+// ResolvePath is filepath.EvalSymlinks for an absolute path, with the refuse
+// list checked on every component before that component is statted. EvalSymlinks
+// lstats each step of a link's target, so a link into a refused prefix would
+// have the refused name statted before any check could turn it away. Here the
+// matcher sees each component first. A link that loops, or exceeds MaxHops, is
+// ErrLoop; a refused step is ErrRefused. The result has no symlink in it.
+func ResolvePath(abs string, r *Refuser) (string, error) {
+	if !strings.HasPrefix(abs, "/") || strings.IndexByte(abs, 0) >= 0 {
+		return "", ErrBadName
+	}
+	pending := splitComps(abs)
+	var resolved []string
+	hops := 0
+	for len(pending) > 0 {
+		c := pending[0]
+		pending = pending[1:]
+		switch c {
+		case "", ".":
+			continue
+		case "..":
+			if len(resolved) > 0 {
+				resolved = resolved[:len(resolved)-1]
+			}
+			continue
+		}
+		resolved = append(resolved, c)
+		if class, bad := r.Inside(resolved); bad {
+			return "", &RefusedError{Class: class}
+		}
+		p := "/" + strings.Join(resolved, "/")
+		fi, err := os.Lstat(p)
+		if err != nil {
+			return "", err
+		}
+		if fi.Mode()&fs.ModeSymlink == 0 {
+			continue
+		}
+		if hops++; hops > MaxHops {
+			return "", ErrLoop
+		}
+		link, err := os.Readlink(p)
+		if err != nil {
+			return "", err
+		}
+		resolved = resolved[:len(resolved)-1]
+		if strings.HasPrefix(link, "/") {
+			resolved = nil // an absolute link starts again from the root
+		}
+		pending = append(splitComps(link), pending...)
+	}
+	return "/" + strings.Join(resolved, "/"), nil
+}
+
+func splitComps(p string) []string { return strings.Split(p, "/") }
+
+// RefusedError is a refusal that knows which list refused: "builtin" or
+// "config". It is ErrRefused to errors.Is, and its text names no path.
+type RefusedError struct{ Class string }
+
+func (e *RefusedError) Error() string { return ErrRefused.Error() + " (" + e.Class + ")" }
+
+// Is makes errors.Is(err, ErrRefused) true.
+func (e *RefusedError) Is(t error) bool { return t == ErrRefused }
