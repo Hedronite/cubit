@@ -1,6 +1,6 @@
 # The Cubit CLI
 
-Command reference for the built commands: `scan`, `validate`, `version`, `serve`. `--textfile-dir` (C1c) is planned and marked as such. Help text below is the snapshot-tested `--help` output. Config-finding wording follows the rework agreed at C1a (stable `code` per class); shape — file, line, field, excerpt, fix — is unchanged.
+Command reference for the built commands: `scan`, `validate`, `version`, `serve`. `--textfile-dir` writes the textfile. Help text below is the snapshot-tested `--help` output. Config-finding wording follows the rework agreed at C1a (stable `code` per class); shape — file, line, field, excerpt, fix — is unchanged.
 
 ## Global flags
 
@@ -41,13 +41,17 @@ Use "cubit [command] --help" for more information about a command.
 ```
 Scan every configured root once, print the result, and exit.
 Human table by default; --json prints cubit.scan/v0 alone on stdout.
+With --textfile-dir DIR, also write cubit.prom (node_exporter
+textfile format) after the scan. The directory must already exist
+and sit outside the refuse list; Cubit never creates it.
 
 Usage:
   cubit scan [flags]
 
 Flags:
-  -h, --help   help for scan
-      --json   print cubit.scan/v0 instead of the human table
+  -h, --help               help for scan
+      --json               print cubit.scan/v0 instead of the human table
+      --textfile-dir DIR   write cubit.prom into DIR after the scan (node_exporter textfile format)
 
 Global Flags:
       --config string   config file (default "cubit.yaml")
@@ -89,6 +93,9 @@ only. /healthz is 200 while the config is valid and the process is
 serving; it never touches the scanner. Scans run on an interval
 (default 5m), one in flight at a time.
 
+With --textfile-dir DIR, the same bytes /metrics serves are also
+written to cubit.prom in DIR after every scan.
+
 The metrics endpoint is unauthenticated. The bind address must be a
 loopback address; anything wider requires --unsafe-listen, which logs
 one warning with the bound address.
@@ -97,10 +104,11 @@ Usage:
   cubit serve [flags]
 
 Flags:
-  -h, --help              help for serve
-      --listen ADDR       listen on ADDR (default "127.0.0.1:9101")
-      --log-level LEVEL   log LEVEL: debug, info, warn or error (default "info")
-      --unsafe-listen     allow a non-loopback bind (the metrics endpoint is unauthenticated)
+  -h, --help               help for serve
+      --listen ADDR        listen on ADDR (default "127.0.0.1:9101")
+      --log-level LEVEL    log LEVEL: debug, info, warn or error (default "info")
+      --textfile-dir DIR   rewrite cubit.prom in DIR after every scan (node_exporter textfile format)
+      --unsafe-listen      allow a non-loopback bind (the metrics endpoint is unauthenticated)
 
 Global Flags:
       --config string   config file (default "cubit.yaml")
@@ -179,6 +187,29 @@ $ cubit version --json
 {"version":"dev","revision":"f70cb66f823c","go_version":"go1.27.4"}
 ```
 
+## The textfile: `--textfile-dir DIR`
+
+After each scan, write `cubit.prom` into `DIR` (node_exporter textfile format), the same bytes `/metrics` serves. `DIR` must already exist, be a directory, be writable, and sit outside the refuse list; Cubit never creates it. The write is atomic: a temp file in the same directory, `fsync`, a rename over `cubit.prom`, an `fsync` of the directory, mode 0644 whatever the umask. A reader, `node_exporter` or anything else, sees the old file or the new one, never a partial one, because of the rename. Cubit does not claim more than that about a crash: `fsync` is not a durability guarantee on every platform (macOS needs `F_FULLFSYNC`), and the file is regenerated every scan, so a crash leaves the previous file or an incomplete one that the next scan replaces. The temp and lock files are dotted and do not end in `.prom`, so node_exporter ignores them; a temp file left by a crash is removed at the next write.
+
+One writer per directory: Cubit takes a non-blocking `flock` on `.cubit.prom.lock` and holds it for the life of the process (`serve`) or the span of one run (`scan`). A second Cubit on the same `DIR` fails its preflight at once; a crashed holder releases the lock, so it never blocks a restart. The lock file (mode 0600, so only its owner can take it) stays in the directory between runs; a leftover `.cubit.prom.lock` is normal and is not evidence of a crash. The lock needs a filesystem that supports `flock`; on one that does not, Cubit refuses to start rather than write without it.
+
+- `DIR` must not be writable by everyone (anyone could replace `cubit.prom` with false numbers: preflight fails), an existing `cubit.prom` must be a file owned by the user running cubit, and a group-writable `DIR` opens with a warning. `DIR` is opened once and pinned: if it is replaced or moved while `serve` runs, `serve` logs one warning and keeps writing to the original directory, which node_exporter no longer reads, so restart it to follow.
+- A preflight problem is exit 4 on `scan` (nothing is scanned) and exit 5 on `serve` (the listener never opens).
+- A write that fails after a `scan` prints the document anyway, says so on stderr first, and exits 7. On `serve` it logs one Error line on the first failure (the errno, never the directory) and one Info line on recovery, and keeps serving; every scan retries the write from scratch.
+- In cron mode a failed root has no last good values to keep, so it publishes health series only: its size series are gone from the file, not stale. `CubitScanFailing` covers the gap. `serve` keeps last good between scans. A cron-mode file also leaves out `cubit_scans_total` and `cubit_scan_errors_total`: counters are process-scoped, and a file written by a fresh process would restart them at 0 or 1 on every run, which Prometheus reads as a reset on every scrape. `serve`'s file is byte for byte what `/metrics` serves, counters included.
+
+### Cron mode
+
+```
+*/5 * * * * cubituser  cubit scan --config /etc/cubit/cubit.yaml --textfile-dir /var/lib/node_exporter/text --json >/dev/null 2>>/var/log/cubit-scan.log
+```
+
+```
+node_exporter --collector.textfile.directory=/var/lib/node_exporter/text
+```
+
+Exit codes still apply: 4 (preflight) and 7 (write failure) land in the stderr log; 0 to 2 are normal scan outcomes. The example growth rules use the error counters, so they are written for `serve`; with cron mode, guard growth on `max_over_time(cubit_scan_partial[24h]) == 0` instead.
+
 ## Things `serve` does not do
 
 - **No config reload.** A scan is a function of the config as it was read at start; changing a root needs a restart. There is no `SIGHUP` handler.
@@ -195,9 +226,10 @@ Only "0–2 means a scan ran, 3+ means it could not" is the public contract. Cod
 | 1 | partial — a scan ran but some bytes went unmeasured (a cap or an unreadable subtree); sizes are lower bounds |
 | 2 | nothing usable — a scan ran but every root failed |
 | 3 | usage — bad flag or arguments |
-| 4 | invalid config — `validate` findings, unreadable or refused config; for `validate`, also the code when findings exist |
-| 5 | `serve` refused to start — non-loopback bind without `--unsafe-listen`, or a listen that failed |
-| 6 | internal error — `main` recovered a panic; a crash never reads as a scan result |
+| 4 | invalid config: `validate` findings, an unreadable or refused config, and (for `scan`) a `--textfile-dir` preflight failure (a missing, refused, world-writable or locked directory, or a `cubit.prom` that is not ours); nothing was scanned |
+| 5 | `serve` refused to start: a non-loopback bind without `--unsafe-listen`, a listen that failed, or a `--textfile-dir` preflight failure |
+| 6 | internal error: `main` recovered a panic; a crash never reads as a scan result |
+| 7 | `scan --textfile-dir` could not write `cubit.prom` after the scan; the document is still printed on stdout and the failure is one line on stderr |
 | 130 | `scan` interrupted by SIGINT: nothing on stdout, stderr says `interrupted` |
 | 143 | `scan` interrupted by SIGTERM: the same |
 
@@ -216,6 +248,3 @@ cubit: unknown flag: --frob
 Run 'cubit --help' for usage.
 ```
 
-## Planned (C1c)
-
-- `--textfile-dir DIR` on `scan` and `serve` — writes `cubit.prom` (node_exporter textfile format) after a scan; the directory must exist and sit outside the refuse list; temp+rename in the same directory, fsync, mode 0644, single-writer `flock`.

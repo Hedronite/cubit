@@ -10,7 +10,7 @@ A Rust-heavy workstation accrues gigabytes inside `target/` directories and shar
 
 ## Status
 
-**C1b is built:** `cubit scan`, `cubit validate`, `cubit version` and `cubit serve` — the exporter at `/metrics` and `/healthz` — all run today. Planned: `--textfile-dir`, the node_exporter textfile write (C1c). The contract — `cubit.config/v0`, `cubit.scan/v0`, `cubit.validate/v0`, the metric table, the refuse list — is in these docs and the schemas.
+**C1b is built:** `cubit scan`, `cubit validate`, `cubit version` and `cubit serve` — the exporter at `/metrics` and `/healthz` — all run today. The contract — `cubit.config/v0`, `cubit.scan/v0`, `cubit.validate/v0`, the metric table, the refuse list — is in these docs and the schemas.
 
 ## Quickstart
 
@@ -73,6 +73,12 @@ scrape_configs:
 
 **The metrics endpoint is unauthenticated.** `serve` binds a loopback address by default; binding anything wider requires `--unsafe-listen`, which logs one warning — and the warning is the whole point: nothing between Prometheus and Cubit authenticates, so keep the listener private to the host or a network you control. Thresholds and severity live in Prometheus rules, not in Cubit.
 
+## Cron mode
+
+If the build host does not run a resident `cubit serve`, a periodic `cubit scan --textfile-dir DIR` fills the same gap. `DIR/cubit.prom` holds **the same bytes `/metrics` serves** for that scan, in node_exporter textfile format: point node_exporter at the directory (`--collector.textfile.directory=DIR`) and every scrape exposes the Cubit series as if they came from the exporter itself. The write is atomic (temp file and rename), so a scrape never catches a half-written file, and the dotted temp and lock names never end in `.prom`, so node_exporter ignores them. Cubit never creates `DIR` and refuses one on the refuse list; one Cubit writes a directory at a time.
+
+One difference to know: **a failed root has no sizes in cron mode.** A one-shot scan has no last good values to keep, so a root whose scan failed publishes its health series only (`cubit_scan_success` 0), and the process-scoped counters are left out of the file; `serve` keeps last good values between scans. If continuous coverage of a host matters, which it does for disk watching, prefer `serve`; cron mode is for boxes where a daemon is not wanted.
+
 ## Metrics
 
 Served by `cubit serve` at `/metrics`:
@@ -101,7 +107,7 @@ One directory per project, and each still reads as one workspace to Cubit.
 - **Allowlisted roots only.** The walk opens every root with `os.Root`, so a path escape fails at the syscall. Symlinks are never followed.
 - **Refuse list.** Credential, vault and sensitive prefixes (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.kube`, …) are refused on every entry, built in and non-removable; config only adds. See [docs/refuse-list.md](docs/refuse-list.md).
 - **Bounded.** Per-root caps on files and wall time; a hostile tree cannot exhaust the host. Partial results are reported as lower bounds.
-- **One write, optional.** The textfile output (`cubit.prom`) is the only thing Cubit writes, and only when `--textfile-dir` is set (C1c).
+- **One write, optional.** The textfile output (`cubit.prom`) is the only thing Cubit writes, and only when `--textfile-dir` is set .
 
 ## What shows up in Vigil (proposed until C3)
 
