@@ -1,0 +1,173 @@
+# Unit tests for cubit-cron.rules.yml. Run: promtool test rules examples/rules/cubit-cron.rules.test.yml
+rule_files:
+  - cubit-cron.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Real growth, never partial: both growth rules fire.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli"}'
+        values: '0+1e9x40'
+      - series: 'cubit_root_bytes{root="example-projects"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts: []
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              workspace: app-cli
+            exp_annotations:
+              summary: "Workspace app-cli in example-projects grew by more than 5 GB in 24h"
+      - eval_time: 30h
+        alertname: CubitRootGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+            exp_annotations:
+              summary: "Root example-projects grew by more than 20 GB in 24h"
+
+  # One partial scan anywhere in the window mutes growth for the window: a root
+  # that is partial now and then truncates at a moving point.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli"}'
+        values: '0+1e9x40'
+      - series: 'cubit_root_bytes{root="example-projects"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects"}'
+        values: '0x20 1 0x19'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts: []
+      - eval_time: 30h
+        alertname: CubitRootGrowth
+        exp_alerts: []
+
+  # Muting is per instance: instance b, never partial, still alerts.
+  - interval: 1h
+    input_series:
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli",instance="a"}'
+        values: '0+1e9x40'
+      - series: 'cubit_workspace_target_bytes{root="example-projects",workspace="app-cli",instance="b"}'
+        values: '0+1e9x40'
+      - series: 'cubit_scan_partial{root="example-projects",instance="a"}'
+        values: '1x40'
+      - series: 'cubit_scan_partial{root="example-projects",instance="b"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CubitWorkspaceGrowth
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              workspace: app-cli
+              instance: b
+            exp_annotations:
+              summary: "Workspace app-cli in example-projects grew by more than 5 GB in 24h"
+
+  # A root that failed its last run: sizes are absent, the alert says so.
+  - interval: 5m
+    input_series:
+      - series: 'cubit_scan_success{root="example-projects"}'
+        values: '1 1 1 0x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CubitScanFailing
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: CubitScanFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+            exp_annotations:
+              summary: "Cubit cannot measure root example-projects; the cron file has no sizes for it"
+
+  # Partial with no unreadable-subtree skip is a cap: it fires. Partial explained
+  # by a permission_denied skip does not, however long it lasts.
+  - interval: 5m
+    input_series:
+      - series: 'cubit_scan_partial{root="capped"}'
+        values: '1x60'
+      - series: 'cubit_skipped_entries{root="capped",reason="vanished"}'
+        values: '14x60'
+      - series: 'cubit_scan_partial{root="unreadable"}'
+        values: '1x60'
+      - series: 'cubit_skipped_entries{root="unreadable",reason="permission_denied"}'
+        values: '2x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: CubitScanPartial
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: CubitScanPartial
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: capped
+            exp_annotations:
+              summary: "Cubit scans of root capped are partial without an unreadable subtree: a cap (max_duration or max_files) is cutting them short"
+
+  # A persistently unreadable subtree fires after 24h, and only for that reason.
+  - interval: 5m
+    input_series:
+      - series: 'cubit_skipped_entries{root="example-projects",reason="permission_denied"}'
+        values: '2x340'
+      - series: 'cubit_skipped_entries{root="example-projects",reason="refused"}'
+        values: '5x340'
+    alert_rule_test:
+      - eval_time: 12h
+        alertname: CubitSubtreeUnreadable
+        exp_alerts: []
+      - eval_time: 26h
+        alertname: CubitSubtreeUnreadable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              reason: permission_denied
+            exp_annotations:
+              summary: "Cubit cannot read 2 subtree(s) under root example-projects (permission_denied)"
+
+  # A dead cron: the file's mtime stops moving while its contents look fine. A
+  # different file in the same directory is not ours.
+  - interval: 5m
+    input_series:
+      - series: 'node_textfile_mtime_seconds{file="/var/lib/node_exporter/text/cubit.prom"}'
+        values: '1000x60'
+      - series: 'node_textfile_mtime_seconds{file="/var/lib/node_exporter/text/other.prom"}'
+        values: '1000x60'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CubitTextfileStale
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: CubitTextfileStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              file: /var/lib/node_exporter/text/cubit.prom
+            exp_annotations:
+              summary: "cubit.prom has not been rewritten for over 30 minutes: the cron scan is not running or cannot write"
+
+  # A file that is rewritten on time does not alert.
+  - interval: 5m
+    input_series:
+      - series: 'node_textfile_mtime_seconds{file="/var/lib/node_exporter/text/cubit.prom"}'
+        values: '0+300x60'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: CubitTextfileStale
+        exp_alerts: []
