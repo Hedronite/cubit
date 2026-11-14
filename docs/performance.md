@@ -1,6 +1,6 @@
 # Performance
 
-What a scan costs, measured on a generated tree, and the budgets the tests hold. Nothing here comes from scanning a real tree; the calibration of `max_files` and `max_duration` defaults on real build hosts is a separate, later exercise, so those defaults are unchanged.
+What a scan costs, measured on generated trees and on one real build host, and the budgets the tests hold. The `max_files` and `max_duration` defaults were checked against the real tree (see [A real tree](#a-real-tree)) and are unchanged.
 
 ## Budgets
 
@@ -58,9 +58,26 @@ Release binaries are stripped (`-s -w`) and built with `CGO_ENABLED=0`. Archive 
 | `linux/arm64` | 10.4 MB | 4.2 MB |
 | `linux/amd64` | 11.3 MB | 4.6 MB |
 
+## A real tree
+
+One read-only `cubit scan --json` run of a real Cargo project tree and a real Cargo home, three times in a row, from the release commit, at the lowest CPU and I/O priority on a host that was also busy with other work (load average 4 to 5). The raw output stayed on the host; only these aggregates are kept, by root alias. The machine is the same class as above (Apple M4 Max, 14 cores, 36 GiB, APFS). The first run is only cold-ish, since the page cache was not purged. The caps were raised far past the defaults so nothing could truncate.
+
+| Root alias | Mode | Entries read | Workspaces | Size | Wall time, three runs | Partial |
+|---|---|---|---|---|---|---|
+| `projects` | `workspace-root` | about 136,000 | 8 | 20.9 GiB | 2.1 s, 1.6 s, 1.7 s | no |
+| `cargo-home` | `cargo-home` | about 110,000 | none | 2.6 GiB | 4.6 s, 3.4 s, 4.1 s | no |
+
+- **Whole process:** 5.0 to 6.7 s wall for both roots, peak RSS 25 to 26 MB, against the 64 MiB budget.
+- **Skips and warnings:** none. No cap tripped, nothing refused, no symlink left a root.
+- **Same bytes every run.** Runs two and three matched except for times.
+- **Entries read** come from a `find` count that a `max_files` bisect confirmed: the project root goes partial at 130,000 and completes at 137,000. The scan document does not report them.
+- **Cost per entry:** about 12 µs on the project root, 25 to 40 µs on the Cargo home (many small files).
+
+The defaults hold with room to spare: 2,000,000 entries is about 15 times the largest root, and 30 s is about 6 times the slowest. They are guards against a runaway tree or a stalled disk, so they are not tightened to the measurement, and a tree that grows is not turned into a partial scan. A host whose first scan comes back partial should raise the cap for that root and look at why.
+
 ## What was changed because of it
 
-Nothing. No measurement came near a budget, and the budgets are not a reason to tune: the walk is bounded by `max_files` and `max_duration` on every root, and a real build host's cost will be set by its cache state and disk, which a generated tree does not reproduce.
+Nothing. No measurement came near a budget, and the budgets are not a reason to tune: the walk is bounded by `max_files` and `max_duration` on every root, and a host's cost will be set by its cache state and disk.
 
 ## Reproduce
 

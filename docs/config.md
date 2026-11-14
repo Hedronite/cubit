@@ -16,7 +16,7 @@ Cubit reads one YAML file, `cubit.config/v0`. It is decoded strictly: an unknown
 
 ## Roots
 
-Every root has an `alias` (the `root` label, a slug), a `path` (absolute, or `~/…`) and a `mode`. All roots take `max_files` (default 2,000,000) and `max_duration` (default `30s`); both defaults are provisional and are calibrated against a real tree after C1a. `max_files` counts directory entries read: each entry once, so a stat of it is not a second count. `max_duration` appears in the scan document as `max_duration_seconds`. The depth guard (64) and the worker limit are process-wide; the depth guard is fixed.
+Every root has an `alias` (the `root` label, a slug), a `path` (absolute, or `~/…`) and a `mode`. All roots take `max_files` (default 2,000,000) and `max_duration` (default `30s`). Both are runaway guards, not tuning knobs: they were set with wide headroom over a measured real tree (see [performance.md](performance.md#a-real-tree)). `max_files` counts directory entries read: each entry once, so a stat of it is not a second count. `max_duration` appears in the scan document as `max_duration_seconds`. The depth guard (64) and the worker limit are process-wide; the depth guard is fixed.
 
 **Durations** use integer parts with `ms`, `s`, `m` or `h` (`30s`, `5m`, `1h30m`). Fractions (`1.5h`) and `us` or `ns` are rejected, which is stricter than Go's `time.ParseDuration`, so the decoder checks the grammar itself.
 

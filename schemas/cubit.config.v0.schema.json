@@ -105,13 +105,13 @@
           ]
         },
         "max_files": {
-          "description": "Per-root cap on directory entries read in one scan (each entry counts once; a stat of it is not a second count). Default 2000000 (provisional, calibrated at C1a).",
+          "description": "Per-root cap on directory entries read in one scan (each entry counts once; a stat of it is not a second count). Default 2000000, a runaway guard with wide headroom over a measured real tree.",
           "type": "integer",
           "minimum": 1000,
           "maximum": 100000000
         },
         "max_duration": {
-          "description": "Per-root wall-time cap for one scan, in the grammar above (no fractions, no us or ns). Default 30s (provisional, calibrated at C1a). `validate` rejects a value at or above scan.interval. The scan document reports it as max_duration_seconds.",
+          "description": "Per-root wall-time cap for one scan, in the grammar above (no fractions, no us or ns). Default 30s, a runaway guard with wide headroom over a measured real tree. `validate` rejects a value at or above scan.interval. The scan document reports it as max_duration_seconds.",
           "$ref": "#/$defs/duration"
         }
       },
