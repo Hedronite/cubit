@@ -17,6 +17,7 @@ The first release. Cubit measures Cargo disk use on build hosts and exports it a
 - The metric set in `docs/metrics.md`, including `cubit_root_info{root,mode}`, and example Prometheus rules for `serve` and for cron mode (warning severity only).
 - `docs/vigil.md`: which metric and PromQL fills each field Vigil shows, with a fixture and tests.
 - JSON Schemas for the three documents under `schemas/`. Every document carries its version in `apiVersion`.
+- Defaults checked against a real tree: `max_files` 2,000,000 and `max_duration` 30s hold with wide headroom (see `docs/performance.md`).
 - Release tooling: `scripts/release.sh` builds deterministic archives for darwin and linux on amd64 and arm64, with a `SHA256SUMS` file; the release workflow adds a CycloneDX SBOM per binary and GitHub build-provenance attestations.
 
 ### Security
