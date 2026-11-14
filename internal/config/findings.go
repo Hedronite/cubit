@@ -37,7 +37,7 @@ const (
 	CodeUnknownKey      = "unknown_key"
 	CodeYAMLSyntax      = "yaml_syntax"
 	CodeFileShape       = "file_shape"
-	CodeBadSchema       = "bad_schema"
+	CodeBadAPIVersion   = "bad_api_version"
 	CodeNamesKey        = "names_key"
 	CodeWrongType       = "wrong_type"
 	CodeInvalidValue    = "invalid_value"
@@ -62,7 +62,7 @@ const (
 // Codes is every code a finding can carry.
 var Codes = []string{
 	CodeSlugPattern, CodePathRelative, CodeBadDuration, CodeBadEnum, CodeKeyForMode, CodeMissingKey,
-	CodeOutOfRange, CodeUnknownKey, CodeYAMLSyntax, CodeFileShape, CodeBadSchema, CodeNamesKey,
+	CodeOutOfRange, CodeUnknownKey, CodeYAMLSyntax, CodeFileShape, CodeBadAPIVersion, CodeNamesKey,
 	CodeWrongType, CodeInvalidValue, CodeDuplicateAlias, CodeOverlappingRoot, CodeRefusedRoot,
 	CodeRefusedInside, CodeSameRealPath, CodeIntervalFloor, CodeDurationGE, CodeDuplicateSlug,
 	CodePathInvalid, CodeNotDirectory, CodeRootMissing, CodeRootUnreadable, CodeLooksLikeTarget,
@@ -71,7 +71,7 @@ var Codes = []string{
 
 // Keys by place. A key valid in one root mode and not another is key_for_mode.
 var (
-	topKeys    = []string{"schema", "host", "scan", "refuse", "roots"}
+	topKeys    = []string{"apiVersion", "host", "scan", "refuse", "roots"}
 	scanKeys   = []string{"interval", "max_workers"}
 	refuseKeys = []string{"vault", "extra"}
 	rootKeys   = []string{"alias", "path", "mode", "max_files", "max_duration"}
@@ -236,7 +236,7 @@ func classify(c *Config, u *jsonschema.OutputUnit, doc any) []Finding {
 		}
 		return []Finding{mk(CodeBadEnum, field, fmt.Sprintf("%s '%s' is not a mode", field, bad), fix)}
 	case kw == "const":
-		return []Finding{mk(CodeBadSchema, field, fmt.Sprintf("%s must be 'cubit.config/v0'", field), "write schema: cubit.config/v0 as the first key.")}
+		return []Finding{mk(CodeBadAPIVersion, field, fmt.Sprintf("%s must be 'cubit.config/v0'", field), "write apiVersion: cubit.config/v0 as the first key.")}
 	case kw == "type":
 		return []Finding{mk(CodeWrongType, field, fmt.Sprintf("%s has the wrong type (%s)", field, msg), "check the value's type in docs/config.md.")}
 	case kw == "pattern" || kw == "not":
@@ -314,7 +314,9 @@ func unknownKey(c *Config, doc any, container, key string, mk func(code, fld, me
 		}
 	}
 	fix := "remove it."
-	if best, ok := closest(key, known, 2); ok {
+	if container == "" && key == "schema" {
+		fix = "the version key is apiVersion: write apiVersion: cubit.config/v0."
+	} else if best, ok := closest(key, known, 2); ok {
 		fix = fmt.Sprintf("remove it; did you mean '%s'?", best)
 	} else if loc := elsewhere(key); loc != "" {
 		fix = fmt.Sprintf("remove it; '%s' lives under %s.", key, loc)
@@ -377,8 +379,8 @@ func missingFix(k string) string {
 		return "add 'path:', absolute or '~/...'."
 	case "roots":
 		return "add a 'roots:' list with at least one root."
-	case "schema":
-		return "add 'schema: cubit.config/v0' as the first key."
+	case "apiVersion":
+		return "add 'apiVersion: cubit.config/v0' as the first key."
 	}
 	return "add the key (see examples/cubit.yaml)."
 }

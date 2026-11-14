@@ -5,13 +5,13 @@
   "description": "The document `cubit validate --json` prints on stdout, whether or not the config has errors. Codes are stable and described in docs/config.md. A message names a field and, for a refused location, only its class (builtin or config), never a path.",
   "type": "object",
   "required": [
-    "schema",
+    "apiVersion",
     "ok",
     "findings"
   ],
   "additionalProperties": false,
   "properties": {
-    "schema": {
+    "apiVersion": {
       "const": "cubit.validate/v0"
     },
     "ok": {
@@ -48,7 +48,7 @@
             "unknown_key",
             "yaml_syntax",
             "file_shape",
-            "bad_schema",
+            "bad_api_version",
             "names_key",
             "wrong_type",
             "invalid_value",

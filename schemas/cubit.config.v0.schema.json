@@ -5,12 +5,12 @@
   "description": "Cubit configuration. Decoded strictly: an unknown key is an error. No environment overrides. This schema is the shape contract; cross-field checks (duplicate aliases, nested or overlapping roots, roots inside a refused prefix, two roots resolving to one real path, textfile directory filesystem) live in `cubit validate` and are listed in docs/config.md.",
   "type": "object",
   "required": [
-    "schema",
+    "apiVersion",
     "roots"
   ],
   "additionalProperties": false,
   "properties": {
-    "schema": {
+    "apiVersion": {
       "const": "cubit.config/v0"
     },
     "host": {

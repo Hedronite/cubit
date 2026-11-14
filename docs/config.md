@@ -6,7 +6,7 @@ Cubit reads one YAML file, `cubit.config/v0`. It is decoded strictly: an unknown
 
 | Key | Default | Meaning |
 |---|---|---|
-| `schema` | required | Must be `cubit.config/v0`. |
+| `apiVersion` | required | Must be `cubit.config/v0`. The version key is `apiVersion` in all three documents (`cubit.config/v0`, `cubit.scan/v0`, `cubit.validate/v0`); the older `schema` is an unknown key. |
 | `host` | none | A slug for the `host` field of the scan document. Never read from the OS. There is no `host` label. |
 | `scan.interval` | `5m` | Time between scans in `serve`, with 10% jitter either way. At least `30s`. |
 | `scan.max_workers` | min(4, GOMAXPROCS) | Concurrent walkers. IO bound, so more is rarely better. |
@@ -66,8 +66,8 @@ Every finding `validate` or `scan` reports carries a stable `code`, shown in `cu
 |---|---|---|
 | `yaml_syntax` | error | The file is not valid YAML. |
 | `file_shape` | error | Empty, over 1 MiB, more than one document, an anchor or alias, or a non-string key. |
-| `bad_schema` | error | `schema` is not `cubit.config/v0`. |
-| `missing_key` | error | A required key is absent (`schema`, `roots`, a root's `alias`, `path` or `mode`). |
+| `bad_api_version` | error | `apiVersion` is not `cubit.config/v0`. |
+| `missing_key` | error | A required key is absent (`apiVersion`, `roots`, a root's `alias`, `path` or `mode`). |
 | `unknown_key` | error | A key that belongs nowhere here. The fix names the nearest real key, or where the key lives. |
 | `key_for_mode` | error | A real key, but for another root mode (`discovery_depth` on a `target-dir`). |
 | `slug_pattern` | error | An alias, `host` or slug outside the grammar. The fix suggests one. |

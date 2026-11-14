@@ -95,11 +95,11 @@ func ParseDuration(s string) (time.Duration, error) {
 // Config is the decoded file with defaults not yet applied; see Resolved fields
 // on the methods below.
 type Config struct {
-	Schema string    `yaml:"schema"`
-	Host   string    `yaml:"host"`
-	Scan   ScanCfg   `yaml:"scan"`
-	Refuse RefuseCfg `yaml:"refuse"`
-	Roots  []Root    `yaml:"roots"`
+	APIVersion string    `yaml:"apiVersion"`
+	Host       string    `yaml:"host"`
+	Scan       ScanCfg   `yaml:"scan"`
+	Refuse     RefuseCfg `yaml:"refuse"`
+	Roots      []Root    `yaml:"roots"`
 
 	lines  map[string]int // "roots/2/alias" -> 1-based line
 	source []string

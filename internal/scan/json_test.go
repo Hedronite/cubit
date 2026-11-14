@@ -29,8 +29,8 @@ func TestExampleScanRoundTripsByteForByte(t *testing.T) {
 
 func TestDecodeIsStrict(t *testing.T) {
 	for name, in := range map[string]string{
-		"unknown field": `{"schema":"cubit.scan/v0","extra":1}`,
-		"trailing data": `{"schema":"cubit.scan/v0"} {}`,
+		"unknown field": `{"apiVersion":"cubit.scan/v0","extra":1}`,
+		"trailing data": `{"apiVersion":"cubit.scan/v0"} {}`,
 		"not json":      `nope`,
 	} {
 		if _, err := Decode(bytes.NewReader([]byte(in))); err == nil {
@@ -41,7 +41,7 @@ func TestDecodeIsStrict(t *testing.T) {
 
 func FuzzScanJSON(f *testing.F) {
 	f.Add(exampleScan(f))
-	f.Add([]byte(`{"schema":"cubit.scan/v0","generated_at":"2026-01-15T12:00:00Z","roots":[],"caps":{"max_workers":1,"depth_guard":64},"warnings":[]}`))
+	f.Add([]byte(`{"apiVersion":"cubit.scan/v0","generated_at":"2026-01-15T12:00:00Z","roots":[],"caps":{"max_workers":1,"depth_guard":64},"warnings":[]}`))
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`[]`))
 	f.Add([]byte(`{"roots":[{"alias":"a","bytes":9223372036854775807,"duration_seconds":1e-7,"workspaces":null}]}`))

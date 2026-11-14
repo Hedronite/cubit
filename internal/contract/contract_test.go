@@ -133,7 +133,7 @@ func TestConfigSchemaRejects(t *testing.T) {
 
 	cases := map[string]func(m map[string]any){
 		"unknown top-level key":     func(m map[string]any) { m["listen"] = "0.0.0.0:9101" },
-		"wrong schema value":        func(m map[string]any) { m["schema"] = "cubit.config/v1" },
+		"wrong apiVersion value":    func(m map[string]any) { m["apiVersion"] = "cubit.config/v1" },
 		"no roots":                  func(m map[string]any) { m["roots"] = []any{} },
 		"host with uppercase":       func(m map[string]any) { m["host"] = "Build-Example" },
 		"interval not a duration":   func(m map[string]any) { m["scan"] = map[string]any{"interval": "5 minutes"} },
@@ -204,7 +204,7 @@ func TestScanSchemaRejects(t *testing.T) {
 
 	cases := map[string]func(m map[string]any){
 		"unknown top-level key":    func(m map[string]any) { m["path"] = "/srv/x" },
-		"wrong schema value":       func(m map[string]any) { m["schema"] = "cubit.scan/v1" },
+		"wrong apiVersion value":   func(m map[string]any) { m["apiVersion"] = "cubit.scan/v1" },
 		"timestamp not UTC":        func(m map[string]any) { m["generated_at"] = "2026-01-15T12:00:00+02:00" },
 		"host with uppercase":      func(m map[string]any) { m["host"] = "Build" },
 		"a path key on a root":     func(m map[string]any) { proj(m)["path"] = "/srv/example/projects" },
@@ -685,7 +685,7 @@ func TestValidateSchemaRejects(t *testing.T) {
 	s := compile(t, "cubit.validate.v0.schema.json")
 	base := decodeJSON(t, read(t, "examples/validate.json"))
 	cases := map[string]func(m map[string]any){
-		"wrong schema":        func(m map[string]any) { m["schema"] = "cubit.validate/v1" },
+		"wrong apiVersion":    func(m map[string]any) { m["apiVersion"] = "cubit.validate/v1" },
 		"missing ok":          func(m map[string]any) { delete(m, "ok") },
 		"missing findings":    func(m map[string]any) { delete(m, "findings") },
 		"extra top-level key": func(m map[string]any) { m["host"] = "x" },
@@ -701,6 +701,54 @@ func TestValidateSchemaRejects(t *testing.T) {
 		mutate(m)
 		if err := s.Validate(asJSON(t, m)); err == nil {
 			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// Every document names its version apiVersion, and none still carries `schema`.
+func TestExamplesNameTheirVersionApiVersion(t *testing.T) {
+	for file, want := range map[string]string{
+		"examples/scan.json":     "cubit.scan/v0",
+		"examples/validate.json": "cubit.validate/v0",
+	} {
+		m := decodeJSON(t, read(t, file))
+		if m["apiVersion"] != want {
+			t.Errorf("%s: apiVersion %v, want %s", file, m["apiVersion"], want)
+		}
+		if _, old := m["schema"]; old {
+			t.Errorf("%s still has a schema key", file)
+		}
+	}
+	y := decodeYAML(t, read(t, "examples/cubit.yaml"))
+	if y["apiVersion"] != "cubit.config/v0" {
+		t.Errorf("examples/cubit.yaml: apiVersion %v", y["apiVersion"])
+	}
+	if _, old := y["schema"]; old {
+		t.Error("examples/cubit.yaml still has a schema key")
+	}
+	for _, f := range []string{"cubit.config.v0.schema.json", "cubit.scan.v0.schema.json", "cubit.validate.v0.schema.json"} {
+		var s struct {
+			Required   []string       `json:"required"`
+			Properties map[string]any `json:"properties"`
+		}
+		if err := json.Unmarshal(read(t, "schemas/"+f), &s); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := s.Properties["apiVersion"]; !ok {
+			t.Errorf("%s has no apiVersion property", f)
+		}
+		if _, ok := s.Properties["schema"]; ok {
+			t.Errorf("%s still has a schema property", f)
+		}
+		found := false
+		for _, r := range s.Required {
+			found = found || r == "apiVersion"
+			if r == "schema" {
+				t.Errorf("%s still requires schema", f)
+			}
+		}
+		if !found {
+			t.Errorf("%s does not require apiVersion", f)
 		}
 	}
 }
