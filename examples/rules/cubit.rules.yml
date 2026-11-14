@@ -2,8 +2,7 @@
 #
 # These rules are written for `cubit serve`. They use cubit_scan_errors_total,
 # which a one-shot `scan --textfile-dir` file does not carry (counters are
-# process-scoped); with cron mode, drop that counter guard and hold growth on
-# `max_over_time(cubit_scan_partial[24h]) == 0` instead.
+# process-scoped). For cron mode use cubit-cron.rules.yml.
 #
 # Cubit measures and judges nothing. Thresholds belong here, in Prometheus.
 # Every rule carries severity "warning": anything built on Cubit is a YELLOW

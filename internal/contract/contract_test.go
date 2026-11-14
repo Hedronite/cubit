@@ -578,15 +578,20 @@ func TestEnumsMatchSchema(t *testing.T) {
 
 // ---- rules -----------------------------------------------------------------
 
+// ruleFiles are the example rule files: one for serve, one for cron mode.
+var ruleFiles = []string{"examples/rules/cubit.rules.yml", "examples/rules/cubit-cron.rules.yml"}
+
 func TestRulesUseOnlyDocumentedMetrics(t *testing.T) {
 	known := map[string]bool{}
 	for _, m := range parseMetrics(t) {
 		known[m.name] = true
 	}
-	raw := read(t, "examples/rules/cubit.rules.yml")
-	for _, name := range regexp.MustCompile(`cubit_[a-z0-9_]+`).FindAllString(string(raw), -1) {
-		if !known[name] {
-			t.Errorf("rules use %s, which docs/metrics.md does not define", name)
+	for _, file := range ruleFiles {
+		raw := read(t, file)
+		for _, name := range regexp.MustCompile(`\bcubit_[a-z0-9_]+`).FindAllString(string(raw), -1) {
+			if !known[name] {
+				t.Errorf("%s uses %s, which docs/metrics.md does not define", file, name)
+			}
 		}
 	}
 }
@@ -594,26 +599,28 @@ func TestRulesUseOnlyDocumentedMetrics(t *testing.T) {
 // TestRulesAreYellowOnly: every example alert carries severity "warning" and
 // nothing that reads as critical.
 func TestRulesAreYellowOnly(t *testing.T) {
-	var f struct {
-		Groups []struct {
-			Rules []struct {
-				Alert  string            `yaml:"alert"`
-				Labels map[string]string `yaml:"labels"`
-			} `yaml:"rules"`
-		} `yaml:"groups"`
-	}
-	if err := yaml.Unmarshal(read(t, "examples/rules/cubit.rules.yml"), &f); err != nil {
-		t.Fatal(err)
-	}
 	n := 0
-	for _, g := range f.Groups {
-		for _, r := range g.Rules {
-			n++
-			if r.Alert == "" {
-				t.Errorf("a rule has no alert name")
-			}
-			if sev := r.Labels["severity"]; sev != "warning" {
-				t.Errorf("%s: severity is %q; Cubit-derived alerts are warning only", r.Alert, sev)
+	for _, file := range ruleFiles {
+		var f struct {
+			Groups []struct {
+				Rules []struct {
+					Alert  string            `yaml:"alert"`
+					Labels map[string]string `yaml:"labels"`
+				} `yaml:"rules"`
+			} `yaml:"groups"`
+		}
+		if err := yaml.Unmarshal(read(t, file), &f); err != nil {
+			t.Fatal(err)
+		}
+		for _, g := range f.Groups {
+			for _, r := range g.Rules {
+				n++
+				if r.Alert == "" {
+					t.Errorf("a rule has no alert name")
+				}
+				if sev := r.Labels["severity"]; sev != "warning" {
+					t.Errorf("%s: %s severity is %q; Cubit-derived alerts are warning only", file, r.Alert, sev)
+				}
 			}
 		}
 	}

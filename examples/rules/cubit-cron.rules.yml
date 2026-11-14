@@ -1,0 +1,92 @@
+# Example Prometheus alerting rules for Cubit in cron mode: `cubit scan
+# --textfile-dir DIR` run from cron, read through node_exporter's textfile
+# collector. Synthetic: copy and adapt. For `cubit serve`, use cubit.rules.yml.
+#
+# A one-shot scan writes gauges only (counters are process-scoped), and a failed
+# root has no last good values, so its size series are absent from the file. That
+# changes four things from the serve rules:
+#   - growth is held on max_over_time(cubit_scan_partial[24h]) == 0, because
+#     there is no cap counter to guard on;
+#   - a cap hit is told from an unreadable subtree by the skip counts: partial
+#     with no unreadable-subtree skip means a cap;
+#   - there is no CubitScanStale, since a failed root has no success timestamp;
+#     CubitScanFailing covers it;
+#   - a dead cron leaves a fresh-looking last file, so the file's own mtime,
+#     which node_exporter exports, is watched.
+#
+# Every rule carries severity "warning": anything built on Cubit is a YELLOW
+# signal and never a page.
+groups:
+  - name: cubit-cron
+    rules:
+      # Growth, attributed per workspace. A partial scan reports a lower bound, and
+      # a cap cuts a scan at a point that moves from run to run, so growth stays
+      # quiet for 24h after any partial scan. Matching keeps `instance`.
+      - alert: CubitWorkspaceGrowth
+        expr: |
+          delta(cubit_workspace_target_bytes[24h]) > 5e9
+          and ignoring (workspace) max_over_time(cubit_scan_partial[24h]) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Workspace {{ $labels.workspace }} in {{ $labels.root }} grew by more than 5 GB in 24h"
+
+      - alert: CubitRootGrowth
+        expr: |
+          delta(cubit_root_bytes[24h]) > 20e9
+          and max_over_time(cubit_scan_partial[24h]) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root {{ $labels.root }} grew by more than 20 GB in 24h"
+
+      # A root the last cron run could not measure. Its sizes are absent from the
+      # file, not stale: this is the alert that says why.
+      - alert: CubitScanFailing
+        expr: cubit_scan_success == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cubit cannot measure root {{ $labels.root }}; the cron file has no sizes for it"
+
+      # A cap cut the scan short: partial, and no unreadable-subtree skip explains it.
+      - alert: CubitScanPartial
+        expr: |
+          cubit_scan_partial == 1
+          unless on (root, instance) cubit_skipped_entries{reason=~"permission_denied|io_error|depth_exceeded"} > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cubit scans of root {{ $labels.root }} are partial without an unreadable subtree: a cap (max_duration or max_files) is cutting them short"
+
+      # A subtree Cubit cannot read, for a day.
+      - alert: CubitSubtreeUnreadable
+        expr: cubit_skipped_entries{reason=~"permission_denied|io_error"} > 0
+        for: 24h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cubit cannot read {{ $value }} subtree(s) under root {{ $labels.root }} ({{ $labels.reason }})"
+
+      - alert: CubitDedupeOverflow
+        expr: cubit_skipped_entries{reason="dedupe_overflow"} > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cubit sizes for root {{ $labels.root }} may over-count hardlinks"
+
+      # The cron job has stopped: node_exporter keeps exporting the last file, so
+      # the cubit_* series look fine. Its mtime does not. Set the threshold to a
+      # few times your cron interval (here 30 minutes for a 5 minute job).
+      - alert: CubitTextfileStale
+        expr: time() - node_textfile_mtime_seconds{file=~".*cubit\\.prom"} > 1800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "cubit.prom has not been rewritten for over 30 minutes: the cron scan is not running or cannot write"
