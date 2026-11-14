@@ -140,8 +140,8 @@ func docMetrics(t *testing.T) map[string]struct {
 			labels []string
 		}{strings.TrimSpace(cells[2]), labels}
 	}
-	if len(out) != 15 {
-		t.Fatalf("parsed %d documented metrics, want 15", len(out))
+	if len(out) != 16 {
+		t.Fatalf("parsed %d documented metrics, want 16", len(out))
 	}
 	return out
 }
@@ -509,5 +509,37 @@ func TestGaugesLeaveOutTheCountersAndNothingElse(t *testing.T) {
 	}
 	if !strings.HasSuffix(g, "\n") {
 		t.Error("ends in a newline")
+	}
+}
+
+// cubit_root_info carries each root's mode, always 1, from the root's first
+// finished scan: a root that failed before it was ever measured still has one,
+// and a failed scan later does not drop it. Gauges (the cron textfile) has it too.
+func TestRootInfoCarriesTheModeFromTheFirstScan(t *testing.T) {
+	c := New(info, []string{"a", "b", "c", "d"})
+	ss, _ := parse(t, string(c.Metrics()))
+	if len(find(ss, "cubit_root_info")) != 0 {
+		t.Error("no mode is known before a scan has finished")
+	}
+	mustUpdate(t, c, doc(
+		root("a", "workspace-root", true, false, 1, ws("x", 1)),
+		root("b", "target-dir", false, false, 0),
+		root("c", "cargo-home", true, true, 2),
+		root("d", "sccache", true, false, 3),
+	), t0)
+	mustUpdate(t, c, doc(root("a", "workspace-root", false, false, 0)), t0.Add(time.Minute))
+	for _, text := range []string{string(c.Metrics()), string(c.Gauges())} {
+		ss, types := parse(t, text)
+		if types["cubit_root_info"] != "gauge" {
+			t.Errorf("type %q", types["cubit_root_info"])
+		}
+		for alias, mode := range map[string]string{"a": "workspace-root", "b": "target-dir", "c": "cargo-home", "d": "sccache"} {
+			if one(t, ss, "cubit_root_info", "root", alias, "mode", mode) != "1" {
+				t.Errorf("root %s: mode %s", alias, mode)
+			}
+		}
+		if len(find(ss, "cubit_root_info")) != 4 {
+			t.Errorf("one series per root: %v", find(ss, "cubit_root_info"))
+		}
 	}
 }

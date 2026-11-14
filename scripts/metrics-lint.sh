@@ -48,6 +48,7 @@ done
 curl -fsS "http://$addr/metrics" > "$work/metrics.txt"
 grep -q '^cubit_root_bytes{root="example-projects"}' "$work/metrics.txt" || { cat "$work/log" >&2; echo "metrics-lint: no size series after the first scan" >&2; exit 1; }
 grep -q '^cubit_scan_success{root="example-missing"} 0' "$work/metrics.txt" || { echo "metrics-lint: the missing root should read success 0" >&2; exit 1; }
+grep -q '^cubit_root_info{root="example-missing",mode="sccache"} 1$' "$work/metrics.txt" || { echo "metrics-lint: a failed root should still carry its mode in cubit_root_info" >&2; exit 1; }
 "$promtool" check metrics < "$work/metrics.txt"
 
 # The textfile serve writes is the same bytes /metrics serves.

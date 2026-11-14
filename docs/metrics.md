@@ -9,6 +9,7 @@ Every value is rendered from the same scan result that `cubit scan --json` print
 | `cubit_workspace_target_bytes` | gauge | `root`, `workspace` | `workspace-root`, `target-dir` | Allocated bytes under one workspace's `target/`. |
 | `cubit_workspace_profile_bytes` | gauge | `root`, `workspace`, `profile` | `workspace-root`, `target-dir` | The same bytes split by profile. The five profiles sum to the workspace value. Omitted when the root sets `profiles: false`. |
 | `cubit_root_bytes` | gauge | `root` | every mode | All measured bytes in the root. Workspace modes: the labelled workspaces plus `cubit_workspaces_unlabeled_bytes`. Cache modes: the sum of `cubit_cache_bytes`. Source trees and skipped subtrees are counted nowhere. |
+| `cubit_root_info` | gauge | `root`, `mode` | every mode | Always 1. Carries the root's mode as a label, the one thing no other series says, the same idiom as `cubit_build_info`. Present from the root's first finished scan, failed or not, so a never-measured root still reads as the mode it was configured with. |
 | `cubit_cache_bytes` | gauge | `root`, `kind` | `cargo-home`, `sccache` | Allocated bytes of one fixed cache area. |
 | `cubit_workspaces` | gauge | `root` | `workspace-root`, `target-dir` | Workspaces found, labelled or not. |
 | `cubit_workspaces_unlabeled` | gauge | `root` | `workspace-root`, `target-dir` | Workspaces beyond `max_workspaces` that got no label. |
@@ -27,6 +28,7 @@ Every value is rendered from the same scan result that `cubit scan --json` print
 These are closed enums, and the schemas use the same values. A new value is a contract change.
 
 - `profile`: `debug`, `release`, `doc`, `incremental`, `other`
+- `mode`: `workspace-root`, `target-dir`, `cargo-home`, `sccache`
 - `kind`: `registry-cache`, `registry-src`, `registry-index`, `git-db`, `git-checkouts`, `cargo-bin`, `sccache`
 - `skip_reason`: `refused`, `symlink_escape`, `symlink_loop`, `permission_denied`, `foreign_device`, `duplicate_target`, `vanished`, `depth_exceeded`, `dedupe_overflow`, `io_error`
 - `error_reason`: `root_missing`, `root_unreadable`, `deadline_exceeded`, `max_files_exceeded`, `subtree_unreadable`
