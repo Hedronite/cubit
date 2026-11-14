@@ -14,7 +14,7 @@ Every value is rendered from the same scan result that `cubit scan --json` print
 | `cubit_workspaces_unlabeled` | gauge | `root` | `workspace-root`, `target-dir` | Workspaces beyond `max_workspaces` that got no label. |
 | `cubit_workspaces_unlabeled_bytes` | gauge | `root` | `workspace-root`, `target-dir` | Their bytes together. There is no `other` workspace. |
 | `cubit_skipped_entries` | gauge | `root`, `reason` | every mode | Entries or subtrees skipped in the last scan. It is a gauge, not a `_total` counter, because it resets every scan. |
-| `cubit_scan_duration_seconds` | gauge | `root` | every mode | Wall time of the last scan of this root. |
+| `cubit_scan_duration_seconds` | gauge | `root` | every mode | Wall time of the last scan of this root, including a failed one: a slow failing root shows here while its sizes are stale. |
 | `cubit_scan_success` | gauge | `root` | every mode | 1 when the last scan gave a usable result, complete or partial. 0 when it failed and the size series hold the last good values. |
 | `cubit_scan_partial` | gauge | `root` | every mode | 1 when some bytes were not measured (a cap cut the scan short, or a subtree was unreadable). Read every size as a lower bound. Never 1 when `cubit_scan_success` is 0. |
 | `cubit_scan_last_success_timestamp_seconds` | gauge | `root` | every mode | Unix time of the last scan with `cubit_scan_success` = 1. A stale value with `cubit_scan_success` = 0 is a root that has stopped measuring. |
@@ -45,7 +45,7 @@ Only `root` and `workspace` carry text from the operator. `root` is a config ali
 - **Skipped.** Skips never add to any byte total.
   - `refused`: a path on the [refuse list](refuse-list.md).
   - `symlink_escape`, `symlink_loop`: Cubit resolves a symlink only for a configured root or a discovered `target/`. One that escapes the root, or loops, is skipped. Symlinks inside a tree are measured as link bytes and never classified.
-  - `permission_denied`, `io_error`: the process could not read it.
+  - `permission_denied`, `io_error`: the process could not read it. A directory that was swapped for another between the lstat and the open also counts as `io_error`: its bytes were not measured and the tree may be hostile, so the root is partial and logs a warning.
   - `foreign_device`: a directory on another device.
   - `duplicate_target`: see above.
   - `vanished`: removed while the walk ran, which is normal in a live build tree.
@@ -58,8 +58,9 @@ Only `root` and `workspace` carry text from the operator. `root` is a config ali
 - **`result`.** `ok` is every root complete, `partial` is the in-between, `failed` is nothing usable.
 - **Hardlinks** are deduplicated within one workspace or cache area, not across them, so a root can total more than `du -s` of the same directories. See [config.md](config.md#measuring-notes).
 - **`last_success_at`** is absent from the scan document, not zero, before a root's first successful scan. `unmatched_name` and `no_workspaces` are config-quality warnings in the scan document only; there is no metric for them.
+- **Before the first scan finishes**, `/metrics` is not empty: it serves `cubit_build_info` and the counters at 0, and nothing else. No size series exist yet, so a rule must key on `up` or `cubit_scan_success`, never on `absent(cubit_root_bytes)`, which stays silent during exactly the window a fresh install is being watched.
 - **Never walks on scrape.** `/metrics` serves the last finished scan.
 
 ## Alerting
 
-Cubit judges nothing. Thresholds live in Prometheus rules, and anything built on these metrics is YELLOW, never RED. See [`examples/rules/cubit.rules.yml`](../examples/rules/cubit.rules.yml). Growth alerts stay quiet for 24 hours after a root flips between complete and partial, because a lower bound followed by a full scan looks like growth. A root that stays partial still alerts: its numbers are lower bounds all the way through, and `CubitScanPartial` flags the state.
+Cubit judges nothing. Thresholds live in Prometheus rules, and anything built on these metrics is YELLOW, never RED. See [`examples/rules/cubit.rules.yml`](../examples/rules/cubit.rules.yml). Growth alerts stay quiet for 24 hours after a root flips between complete and partial, because a lower bound followed by a full scan looks like growth. A root that stays partial still alerts: its numbers are lower bounds all the way through. `CubitScanPartial` fires only on cap hits (`deadline_exceeded`, `max_files_exceeded`); an unreadable subtree is `CubitSubtreeUnreadable`, which waits 24 hours because on a shared build host one unreadable directory is permanent and harmless.

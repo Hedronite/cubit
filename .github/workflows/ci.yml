@@ -132,6 +132,12 @@ jobs:
         run: |
           ./promtool check rules examples/rules/cubit.rules.yml
           ./promtool test rules examples/rules/cubit.rules.test.yml
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      # The exporter's own output, linted by the reference tool.
+      - name: Lint /metrics from a live serve
+        run: scripts/metrics-lint.sh "$PWD/promtool"
 
   # The repo is public: refuse real paths, addresses, hosts and contacts, and
   # scan the tree and its history for secrets.

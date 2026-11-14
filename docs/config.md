@@ -91,6 +91,7 @@ Every finding `validate` or `scan` reports carries a stable `code`, shown in `cu
 | `home_unknown` | error | A `~/` refuse entry and no home directory. |
 | `root_missing` | warning | A root's path does not exist now. A scan reports `root_missing`. |
 | `root_unreadable` | warning | A root's path cannot be resolved now. |
+| `root_is_workspace` | warning | A `workspace-root` that is itself a Cargo workspace (holds `Cargo.toml` and `target/`): it measures the workspaces below it, so it finds none. Point a `target-dir` root at its `target/`. |
 | `looks_like_target` | warning | A `workspace-root` holding `debug/` or `release/` at the top. |
 | `refused_inside` | info | A refused prefix lies inside a root. Legal: it is skipped and counted. |
 | `mode_echo` | info | The root's resolved mode, one line per root. |
@@ -99,7 +100,8 @@ Every finding `validate` or `scan` reports carries a stable `code`, shown in `cu
 
 - **Hardlinks** are counted once per workspace (or cache area), not across them. A file hardlinked into two workspaces counts in both, so a root can total more than `du -s` of the same directories. The reason is determinism: one unit is walked by one goroutine in name order, so which workspace owns a link never depends on timing. A unit's hardlink set holds about a million entries; beyond that, later hardlinks are counted and reported as `dedupe_overflow`.
 - **A partial scan is not reproducible.** When a cap trips, which workspaces finished first depends on scheduling, so two partial scans of one tree can differ. Only a complete scan is deterministic. The numbers of a partial scan are lower bounds, nothing more.
-- **`max_files` bounds entries read, not syscalls.** `max_duration` is the bound on wall time and so on syscalls.
+- **`max_files` bounds entries read, not syscalls.** `max_duration` is the bound on wall time and so on syscalls. Workspace discovery and the measurement of the workspaces it finds share one `max_files` budget, so a `workspace-root` measures with what discovery left. `max_duration` is checked between entries: a hung filesystem can hold one directory read past it, so the cap bounds responsiveness, not a stalled mount. Alert on `cubit_scan_duration_seconds` for that.
+- **`workspaces_found` counts the workspaces that were measured.** One that was found but could not be measured (removed, swapped, refused) or that duplicates an earlier target is in `skipped[]`, not in the count.
 - **A symlinked `target/`** is followed through every hop that stays inside its root, with the refuse list checked on each hop (up to 40 hops). One that leaves the root, is absolute, loops, or lands on a refused path is skipped as `symlink_escape`, `symlink_loop` or `refused`. To measure a shared target that workspaces link to from outside their root, give it its own `target-dir` root.
 - **A symlinked cache area** under `cargo-home` (for example `registry/cache` linked to another disk) is not followed. It reads zero and counts as `symlink_escape`. Point a `target-dir`-style root at the real location instead.
 - **Names case.** The refuse list folds case with Unicode lowercasing and does not normalize Unicode; an APFS volume that matches names by normalization could still show a spelling the list does not.

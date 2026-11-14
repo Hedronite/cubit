@@ -12,7 +12,7 @@ groups:
       # reverse) looks like a jump, so growth alerts stay quiet for 24h after a
       # root flips between complete and partial. A root that stays partial still
       # alerts: lower bound against lower bound compares fairly, and CubitScanPartial
-      # already flags the steady state. Matching keeps `instance`, because root
+      # and CubitSubtreeUnreadable flag the causes. Matching keeps `instance`, because root
       # aliases are per host and one host's partial must not mute another's.
       - alert: CubitWorkspaceGrowth
         expr: |
@@ -54,14 +54,26 @@ groups:
         annotations:
           summary: "Cubit has not measured root {{ $labels.root }} for over an hour"
 
-      # Some bytes are not being measured (a cap, or an unreadable subtree), so every size is a lower bound.
+      # A cap cut a scan short: max_duration or max_files ran out, so every size is
+      # a lower bound. This is the systematic-truncation signal. Raise the cap, or
+      # narrow the root. An unreadable subtree does not fire it: see below.
       - alert: CubitScanPartial
-        expr: cubit_scan_partial == 1
-        for: 1h
+        expr: increase(cubit_scan_errors_total{reason=~"deadline_exceeded|max_files_exceeded"}[1h]) > 0
         labels:
           severity: warning
         annotations:
-          summary: "Cubit scans of root {{ $labels.root }} are partial: a cap or an unreadable subtree; see cubit_scan_errors_total"
+          summary: "Cubit scans of root {{ $labels.root }} hit a cap ({{ $labels.reason }}); sizes are lower bounds"
+
+      # A subtree Cubit cannot read, for a day. On a shared build host one such
+      # directory (another user's, a sandbox) is permanent and harmless, so this
+      # waits 24h and names the cause. Sizes stay honest lower bounds meanwhile.
+      - alert: CubitSubtreeUnreadable
+        expr: cubit_skipped_entries{reason=~"permission_denied|io_error"} > 0
+        for: 24h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cubit cannot read {{ $value }} subtree(s) under root {{ $labels.root }} ({{ $labels.reason }})"
 
       # The hardlink set filled, so later hardlinks may be counted twice.
       - alert: CubitDedupeOverflow
