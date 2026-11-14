@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -44,6 +45,7 @@ type Spec struct {
 	Refuse     *contain.Refuser
 	DepthGuard int
 	DedupeMax  int
+	Log        *slog.Logger // nil is silent
 }
 
 // Env is what a test replaces: the clock and the stat seam.
@@ -147,8 +149,12 @@ type unitResult struct {
 
 func scanRoot(ctx context.Context, spec Spec, env Env, rs RootSpec, claimed map[inode]bool) (Root, []Warning, error) {
 	start := env.Now()
-	budget := walk.NewBudget(rs.MaxFiles, rs.MaxDuration, env.Now)
+	budget := walk.NewBudgetAt(start, rs.MaxFiles, rs.MaxDuration, env.Now)
 	wc := walk.Config{Refuse: spec.Refuse, Stat: env.Stat, Budget: budget, DepthGuard: spec.DepthGuard, DedupeMax: spec.DedupeMax}
+	if spec.Log != nil {
+		wc.Log = &walk.Logger{L: spec.Log.With("alias", rs.Alias)}
+		defer wc.Log.Done()
+	}
 
 	out := Root{
 		Alias: rs.Alias, Mode: rs.Mode,
@@ -348,7 +354,7 @@ func measureUnit(ctx context.Context, spec Spec, wc walk.Config, top *os.Root, c
 	res := unitResult{unit: u}
 	skip := func(reason string) { res.tally.Skips = map[string]int{reason: 1} }
 	abs := append(append(make([]string, 0, len(comps)+len(u.open)+4), comps...), u.open...)
-	if len(u.open) > 0 && spec.Refuse.Refused(abs) {
+	if _, bad := spec.Refuse.Inside(abs); len(u.open) > 0 && bad {
 		skip(reason.Refused)
 		res.absent = u.checkI
 		return res
@@ -371,8 +377,13 @@ func measureUnit(ctx context.Context, spec Spec, wc walk.Config, top *os.Root, c
 		fi, err := root.Stat(".")
 		st, ok := walkStat(Env{Stat: wc.Stat}, fi)
 		if err != nil || !ok || st.Dev != u.dev || st.Ino != u.ino {
+			// Discovery admitted this directory, and now it is a different one:
+			// a swap, not a plain removal. Its bytes are unmeasured, so fail closed.
 			res.absent = true
-			skip(reason.Vanished)
+			if wc.Log != nil && ok {
+				wc.Log.Swap(len(u.open))
+			}
+			skip(reason.IOError)
 			return res
 		}
 	}

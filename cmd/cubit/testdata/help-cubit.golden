@@ -7,6 +7,7 @@ Usage:
 Available Commands:
   help        Help about any command
   scan        Scan configured roots once and print the result
+  serve       Run the exporter and serve /metrics
   validate    Check the config and report every problem at once
   version     Print the version
 
