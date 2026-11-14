@@ -70,27 +70,76 @@ tests:
               root: example-projects
             exp_annotations:
               summary: "Cubit has not measured root example-projects for over an hour"
-      - eval_time: 130m
-        alertname: CubitScanPartial
-        exp_alerts: []
 
-  # A scan that is cut short for over an hour.
-  - interval: 1m
+  # A cap hit fires CubitScanPartial, and it stops firing an hour after the last one.
+  - interval: 5m
     input_series:
-      - series: 'cubit_scan_partial{root="example-projects"}'
-        values: '0 1x120'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="deadline_exceeded"}'
+        values: '0 0 0 1 1x40'
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="max_files_exceeded"}'
+        values: '0x40'
     alert_rule_test:
-      - eval_time: 30m
+      - eval_time: 10m
         alertname: CubitScanPartial
         exp_alerts: []
-      - eval_time: 90m
+      - eval_time: 20m
         alertname: CubitScanPartial
         exp_alerts:
           - exp_labels:
               severity: warning
               root: example-projects
+              reason: deadline_exceeded
             exp_annotations:
-              summary: "Cubit scans of root example-projects are partial: a cap or an unreadable subtree; see cubit_scan_errors_total"
+              summary: "Cubit scans of root example-projects hit a cap (deadline_exceeded); sizes are lower bounds"
+      - eval_time: 2h30m
+        alertname: CubitScanPartial
+        exp_alerts: []
+
+  # An unreadable subtree is not a cap hit: subtree_unreadable never fires CubitScanPartial,
+  # however often it counts.
+  - interval: 5m
+    input_series:
+      - series: 'cubit_scan_errors_total{root="example-projects",reason="subtree_unreadable"}'
+        values: '0+1x60'
+      - series: 'cubit_scan_partial{root="example-projects"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: CubitScanPartial
+        exp_alerts: []
+
+  # A persistently unreadable subtree fires CubitSubtreeUnreadable after 24h, per reason.
+  - interval: 5m
+    input_series:
+      - series: 'cubit_skipped_entries{root="example-projects",reason="permission_denied"}'
+        values: '2x340'
+      - series: 'cubit_skipped_entries{root="example-projects",reason="io_error"}'
+        values: '0x340'
+      - series: 'cubit_skipped_entries{root="example-projects",reason="refused"}'
+        values: '5x340'
+    alert_rule_test:
+      - eval_time: 12h
+        alertname: CubitSubtreeUnreadable
+        exp_alerts: []
+      - eval_time: 26h
+        alertname: CubitSubtreeUnreadable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              root: example-projects
+              reason: permission_denied
+            exp_annotations:
+              summary: "Cubit cannot read 2 subtree(s) under root example-projects (permission_denied)"
+
+  # A subtree that is unreadable for a while and then fixed does not fire.
+  - interval: 5m
+    input_series:
+      - series: 'cubit_skipped_entries{root="example-projects",reason="io_error"}'
+        values: '1x200 _x200'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CubitSubtreeUnreadable
+        exp_alerts: []
 
   # A partial scan inside the window silences growth: the jump after it is not growth.
   - interval: 1h

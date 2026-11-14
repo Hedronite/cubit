@@ -10,7 +10,7 @@ A Rust-heavy workstation accrues gigabytes inside `target/` directories and shar
 
 ## Status
 
-**C1a is built:** `cubit scan`, `cubit validate` and `cubit version` run today. Planned: `cubit serve`, the exporter endpoint (C1b), and `--textfile-dir`, the node_exporter textfile write (C1c). The contract — `cubit.config/v0`, `cubit.scan/v0`, the metric table, the refuse list — is in PR #1 and these docs.
+**C1b is built:** `cubit scan`, `cubit validate`, `cubit version` and `cubit serve` — the exporter at `/metrics` and `/healthz` — all run today. Planned: `--textfile-dir`, the node_exporter textfile write (C1c). The contract — `cubit.config/v0`, `cubit.scan/v0`, `cubit.validate/v0`, the metric table, the refuse list — is in these docs and the schemas.
 
 ## Quickstart
 
@@ -44,11 +44,38 @@ $ cubit scan --config cubit.yaml --json    # cubit.scan/v0 on stdout
 
 Byte counts depend on filesystem block size; the output above is from a real run. `SIZE` is a rounded reading aid (base 1024); `BYTES` and the JSON carry the exact number. Every alias and path in this README is synthetic; real deployments name roots with slugs, never filesystem paths.
 
-For scripted use: `cubit scan --json` prints the `cubit.scan/v0` document alone on stdout (schema in [`schemas/cubit.scan.v0.schema.json`](schemas/cubit.scan.v0.schema.json)); `cubit validate --json` prints findings as JSON. Exit codes: 0–2 mean a scan ran (ok / partial / nothing usable), 3+ mean it could not. See [docs/cli.md](docs/cli.md).
+For scripted use: `cubit scan --json` prints the `cubit.scan/v0` document alone on stdout (schema in [`schemas/cubit.scan.v0.schema.json`](schemas/cubit.scan.v0.schema.json)); `cubit validate --json` prints the `cubit.validate/v0` document. Exit codes: 0–2 mean a scan ran (ok / partial / nothing usable), 3+ mean it could not. See [docs/cli.md](docs/cli.md).
+
+## Run it as an exporter
+
+On the build host, start the exporter in the background:
+
+```console
+$ cubit serve --config cubit.yaml --listen 127.0.0.1:9101 &
+time=2026-11-14T12:00:00.000Z level=INFO msg=listening addr=127.0.0.1:9101 config=cubit.yaml roots=1 interval=5m0s
+$ curl -s http://127.0.0.1:9101/healthz
+ok
+$ curl -s http://127.0.0.1:9101/metrics | head -4
+# HELP cubit_build_info Build information.
+# TYPE cubit_build_info gauge
+cubit_build_info{version="dev",revision="f70cb66",go_version="go1.27.4"} 1
+```
+
+Point a local Prometheus at it (synthetic names; scrape from the same host or over a private network only):
+
+```yaml
+scrape_configs:
+  - job_name: cubit
+    scrape_interval: 1m
+    static_configs:
+      - targets: ['127.0.0.1:9101']
+```
+
+**The metrics endpoint is unauthenticated.** `serve` binds a loopback address by default; binding anything wider requires `--unsafe-listen`, which logs one warning — and the warning is the whole point: nothing between Prometheus and Cubit authenticates, so keep the listener private to the host or a network you control. Thresholds and severity live in Prometheus rules, not in Cubit.
 
 ## Metrics
 
-From `cubit serve` at `/metrics` (C1b), or written once per scan with `--textfile-dir` (C1c):
+Served by `cubit serve` at `/metrics`:
 
 - **Sizes (gauges, bytes):** `cubit_workspace_target_bytes`, `cubit_workspace_profile_bytes`, `cubit_root_bytes`, `cubit_cache_bytes`.
 - **Counts (gauges):** `cubit_workspaces`, `cubit_workspaces_unlabeled{,_bytes}`, `cubit_skipped_entries`.
@@ -69,7 +96,7 @@ One directory per project, and each still reads as one workspace to Cubit.
 
 ## Security posture
 
-- **Loopback by default.** `serve` (C1b) binds `127.0.0.1:9101`. A non-loopback bind is refused unless `--unsafe-listen` is passed, which logs one WARN line with the bound address.
+- **Loopback by default.** `serve` binds `127.0.0.1:9101`. A non-loopback bind is refused unless `--unsafe-listen` is passed, which logs one WARN line with the bound address.
 - **Unauthenticated.** The metrics endpoint has no auth. Treat the listener as private; do not expose it beyond the host without understanding that.
 - **Allowlisted roots only.** The walk opens every root with `os.Root`, so a path escape fails at the syscall. Symlinks are never followed.
 - **Refuse list.** Credential, vault and sensitive prefixes (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.kube`, …) are refused on every entry, built in and non-removable; config only adds. See [docs/refuse-list.md](docs/refuse-list.md).
