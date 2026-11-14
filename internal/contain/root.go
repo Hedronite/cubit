@@ -49,6 +49,22 @@ func OpenRoot(path string, r *Refuser) (*os.Root, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	// The path was resolved before it was opened. Compare what was opened with
+	// what the resolved path is now, so a swap in between is caught.
+	want, err := os.Lstat(real)
+	if err != nil {
+		_ = root.Close()
+		return nil, "", err
+	}
+	got, err := root.Stat(".")
+	if err != nil {
+		_ = root.Close()
+		return nil, "", err
+	}
+	if !os.SameFile(want, got) {
+		_ = root.Close()
+		return nil, "", ErrChanged
+	}
 	return root, real, nil
 }
 
@@ -126,7 +142,12 @@ func SkipReason(err error) string {
 		return reason.SymlinkEscape
 	case errors.Is(err, ErrLoop):
 		return reason.SymlinkLoop
-	case errors.Is(err, ErrChanged), errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
+	case errors.Is(err, ErrChanged):
+		// A directory swapped between the lstat and the open has unmeasured
+		// bytes and may be hostile, so it fails closed: io_error makes the root
+		// partial, where vanished would let a complete-looking number through.
+		return reason.IOError
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
 		return reason.Vanished
 	case errors.Is(err, fs.ErrPermission):
 		return reason.PermissionDenied

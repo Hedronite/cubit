@@ -106,11 +106,11 @@ func (d *discoverer) dir(dir *os.Root, rel []string, depth int, top bool) error 
 		if top {
 			return err
 		}
-		d.t.skip(contain.SkipReason(err))
+		d.cfg.fail(d.t, err, d.comps, len(d.topComps))
 		return nil
 	}
 	if err != nil {
-		d.t.skip(contain.SkipReason(err))
+		d.cfg.fail(d.t, err, d.comps, len(d.topComps))
 	}
 	if !d.cfg.Budget.Alive() {
 		return nil
@@ -150,7 +150,7 @@ func (d *discoverer) child(dir *os.Root, rel []string, depth int, name string) e
 	}
 	fi, err := dir.Lstat(name)
 	if err != nil {
-		d.t.skip(contain.SkipReason(err))
+		d.cfg.fail(d.t, err, d.comps, len(d.topComps))
 		return nil
 	}
 	st, ok := d.cfg.stat(fi)
@@ -168,7 +168,7 @@ func (d *discoverer) child(dir *os.Root, rel []string, depth int, name string) e
 	}
 	sub, err := contain.ChildWith(dir, name, fi)
 	if err != nil {
-		d.t.skip(contain.SkipReason(err))
+		d.cfg.fail(d.t, err, d.comps, len(d.topComps))
 		return nil
 	}
 	defer sub.Close()
@@ -212,7 +212,7 @@ func (d *discoverer) workspace(dir *os.Root, rel []string, ents []fs.DirEntry) {
 func (d *discoverer) symlinked(relDir string) {
 	final, err := contain.Resolve(d.top, d.topComps, relDir+"/target", d.cfg.Refuse)
 	if err != nil {
-		d.t.skip(contain.SkipReason(err))
+		d.cfg.fail(d.t, err, d.comps, len(d.topComps))
 		return
 	}
 	if final == "" || final == relDir || strings.HasPrefix(relDir+"/", final+"/") {
@@ -226,7 +226,7 @@ func (d *discoverer) symlinked(relDir string) {
 func (d *discoverer) admit(relDir, target string) {
 	fi, err := d.top.Stat(target)
 	if err != nil {
-		d.t.skip(contain.SkipReason(err))
+		d.cfg.fail(d.t, err, d.comps, len(d.topComps))
 		return
 	}
 	if !fi.IsDir() {
@@ -234,7 +234,7 @@ func (d *discoverer) admit(relDir, target string) {
 	}
 	sub, err := d.top.OpenRoot(target)
 	if err != nil {
-		d.t.skip(contain.SkipReason(err))
+		d.cfg.fail(d.t, err, d.comps, len(d.topComps))
 		return
 	}
 	defer sub.Close()

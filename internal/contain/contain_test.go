@@ -247,8 +247,8 @@ func TestChildDetectsASwap(t *testing.T) {
 	if _, err := ChildWith(root, "a", old); !errors.Is(err, ErrChanged) {
 		t.Fatalf("swapped directory: %v, want ErrChanged", err)
 	}
-	if SkipReason(ErrChanged) != "vanished" {
-		t.Error("a swap is reported as vanished")
+	if SkipReason(ErrChanged) != "io_error" {
+		t.Error("a swap fails closed as io_error, which makes the root partial; vanished would not")
 	}
 }
 

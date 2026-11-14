@@ -20,9 +20,15 @@ type Budget struct {
 
 // NewBudget starts the clock now. A zero maxFiles or maxDuration means no cap.
 func NewBudget(maxFiles int64, maxDuration time.Duration, now func() time.Time) *Budget {
+	return NewBudgetAt(now(), maxFiles, maxDuration, now)
+}
+
+// NewBudgetAt is NewBudget with the start time given, so a caller that already
+// read the clock does not read it a second time.
+func NewBudgetAt(start time.Time, maxFiles int64, maxDuration time.Duration, now func() time.Time) *Budget {
 	b := &Budget{maxFiles: maxFiles, now: now}
 	if maxDuration > 0 {
-		b.deadline = now().Add(maxDuration)
+		b.deadline = start.Add(maxDuration)
 	}
 	return b
 }
