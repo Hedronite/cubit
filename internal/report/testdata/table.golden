@@ -1,0 +1,18 @@
+ROOT                   MODE            BYTES        SIZE  STATE
+example-cargo-home     cargo-home      9000000000   8.4G  ok
+  git-db                               3000000000   2.8G
+  registry-cache                       2500000000   2.3G
+  git-checkouts                        2000000000   1.9G
+  cargo-bin                            500000000    477M
+  registry-index                       500000000    477M
+  registry-src                         500000000    477M
+example-projects       workspace-root  42000000000   39G  partial
+  app-cli                              30000000000   28G
+  libs/core                            11000000000   10G
+  (1 unlabeled)                        1000000000   954M
+example-shared-target  target-dir      -               -  failed
+warning: example-cargo-home skipped 1 refused
+warning: example-projects partial: deadline_exceeded; every size is a lower bound
+warning: example-projects skipped 2 permission_denied, 14 vanished
+warning: example-projects: 1 unmatched_name in names
+error:   example-shared-target failed: root_missing; fix: check that the path of root example-shared-target in cubit.yaml exists

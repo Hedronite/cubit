@@ -1,0 +1,11 @@
+Print the version. One stable line by default.
+
+Usage:
+  cubit version [flags]
+
+Flags:
+  -h, --help   help for version
+      --json   print {"version":...,"revision":...,"go_version":...} instead
+
+Global Flags:
+      --config string   config file (default "cubit.yaml")

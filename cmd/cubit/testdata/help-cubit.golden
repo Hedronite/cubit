@@ -1,0 +1,18 @@
+Cubit measures Cargo disk usage on build hosts and exports it as
+Prometheus metrics. It measures; it never cleans.
+
+Usage:
+  cubit [command]
+
+Available Commands:
+  help        Help about any command
+  scan        Scan configured roots once and print the result
+  validate    Check the config and report every problem at once
+  version     Print the version
+
+Flags:
+      --config string   config file (default "cubit.yaml")
+  -h, --help            help for cubit
+  -v, --version         version for cubit
+
+Use "cubit [command] --help" for more information about a command.
