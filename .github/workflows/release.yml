@@ -1,0 +1,101 @@
+name: release
+
+# Runs on a version tag and nothing else. It tests the tagged commit, builds the
+# archives with scripts/release.sh, makes a CycloneDX SBOM per binary, attests
+# build provenance for each archive and binds each SBOM to its archive, then
+# publishes the release. A failed run is not retried under the same tag: fix
+# forward with the next version.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  # Never fetch a newer toolchain: the pinned release builds the archives.
+  GOTOOLCHAIN: local
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.4
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      CYCLONEDX_GOMOD_VERSION: v1.12.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.27.4
+      - name: Version
+        id: ver
+        run: echo "ver=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Release notes
+        run: scripts/changelog-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+      - name: Build the archives
+        run: scripts/release.sh "$GITHUB_REF_NAME"
+      - name: SBOMs
+        run: |
+          go install "github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@${CYCLONEDX_GOMOD_VERSION}"
+          PATH="$(go env GOPATH)/bin:$PATH" scripts/sbom.sh "$GITHUB_REF_NAME"
+          scripts/sums.sh dist
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.tar.gz
+      # One SBOM is bound to one archive, so one step per target.
+      - name: SBOM attestation (darwin/arm64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/cubit_${{ steps.ver.outputs.ver }}_darwin_arm64.tar.gz
+          sbom-path: dist/cubit_${{ steps.ver.outputs.ver }}_darwin_arm64.cdx.json
+      - name: SBOM attestation (darwin/amd64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/cubit_${{ steps.ver.outputs.ver }}_darwin_amd64.tar.gz
+          sbom-path: dist/cubit_${{ steps.ver.outputs.ver }}_darwin_amd64.cdx.json
+      - name: SBOM attestation (linux/amd64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/cubit_${{ steps.ver.outputs.ver }}_linux_amd64.tar.gz
+          sbom-path: dist/cubit_${{ steps.ver.outputs.ver }}_linux_amd64.cdx.json
+      - name: SBOM attestation (linux/arm64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/cubit_${{ steps.ver.outputs.ver }}_linux_arm64.tar.gz
+          sbom-path: dist/cubit_${{ steps.ver.outputs.ver }}_linux_arm64.cdx.json
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          flags=()
+          case "$GITHUB_REF_NAME" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" \
+            dist/*.tar.gz dist/*.cdx.json dist/SHA256SUMS \
+            --title "cubit $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --verify-tag "${flags[@]}"
