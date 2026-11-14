@@ -124,17 +124,10 @@ func Open(dir, home string, ref *contain.Refuser) (*Writer, error) {
 	if class, bad := ref.Inside(contain.Components(abs)); bad {
 		return nil, &RefusedError{Class: class}
 	}
-	// Lstat, not Stat: a symlink is not followed here. Where it leads is checked
-	// against the refuse list by OpenRoot before anything touches it, and the
-	// opened directory itself is checked for being a directory below.
-	fi, statErr := os.Lstat(abs) //nolint:gosec // the operator names the directory, and a refused one was turned away above
-	switch {
-	case errors.Is(statErr, fs.ErrNotExist):
-		return nil, ErrNotExist
-	case statErr == nil && fi.Mode()&fs.ModeSymlink == 0 && !fi.IsDir():
-		return nil, ErrNotDir
-	}
-	root, real, err := contain.OpenRoot(abs, ref)
+	// Resolve the path ourselves, with the refuse list in front of every lstat,
+	// so a refused name is never statted, whether it is the directory or the
+	// target of a link. Then the plain answers: missing, or not a directory.
+	resolved, err := contain.ResolvePath(filepath.Clean(abs), ref)
 	if err != nil {
 		switch {
 		case errors.Is(err, contain.ErrRefused):
@@ -146,14 +139,30 @@ func Open(dir, home string, ref *contain.Refuser) (*Writer, error) {
 			return nil, &RefusedError{Class: class}
 		case errors.Is(err, fs.ErrNotExist):
 			return nil, ErrNotExist
-		case errors.Is(err, syscall.ENOTDIR), Text(err) == "not a directory":
-			return nil, ErrNotDir
+		case errors.Is(err, syscall.ENOTDIR):
+			return nil, ErrNotDir // a component on the way is a file
+		case errors.Is(err, fs.ErrPermission):
+			return nil, ErrNotWritable
+		}
+		return nil, fmt.Errorf("cannot resolve the directory: %s", Text(err))
+	}
+	if fi, err := os.Stat(resolved); err != nil || !fi.IsDir() { //nolint:gosec // resolved is symlink-free and was checked against the refuse list
+		if err != nil && errors.Is(err, fs.ErrNotExist) {
+			return nil, ErrNotExist
+		}
+		return nil, ErrNotDir
+	}
+	root, real, err := contain.OpenRoot(resolved, ref)
+	if err != nil {
+		switch {
+		case errors.Is(err, contain.ErrRefused):
+			return nil, &RefusedError{Class: "builtin"}
 		case errors.Is(err, fs.ErrPermission):
 			return nil, ErrNotWritable
 		}
 		return nil, fmt.Errorf("cannot open the directory: %s", Text(err))
 	}
-	if fi, err := root.Stat("."); err != nil || !fi.IsDir() {
+	if di, err := root.Stat("."); err != nil || !di.IsDir() {
 		_ = root.Close()
 		return nil, ErrNotDir
 	}
