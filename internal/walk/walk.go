@@ -27,8 +27,9 @@ type Config struct {
 	Refuse     *contain.Refuser
 	Stat       StatFunc // StatOf when nil
 	Budget     *Budget
-	DepthGuard int // directories deeper than this are skipped as depth_exceeded
-	DedupeMax  int // hardlink set bound per unit
+	DepthGuard int     // directories deeper than this are skipped as depth_exceeded
+	DedupeMax  int     // hardlink set bound per unit
+	Log        *Logger // nil is silent
 }
 
 // Tally is the result of walking one unit.
@@ -48,12 +49,13 @@ func (t *Tally) skip(reason string) {
 type inode struct{ dev, ino uint64 }
 
 type walker struct {
-	ctx   context.Context
-	cfg   Config
-	dev   uint64
-	comps []string // absolute components of the directory being read
-	t     *Tally
-	seen  map[inode]struct{}
+	ctx     context.Context
+	cfg     Config
+	dev     uint64
+	rootLen int
+	comps   []string // absolute components of the directory being read
+	t       *Tally
+	seen    map[inode]struct{}
 }
 
 func (c Config) stat(fi fs.FileInfo) (Stat, bool) {
@@ -80,12 +82,13 @@ func (c Config) Measure(ctx context.Context, root *os.Root, rootComps []string) 
 		return t, errors.New("no stat data from this filesystem")
 	}
 	w := &walker{
-		ctx:   ctx,
-		cfg:   c,
-		dev:   st.Dev,
-		comps: append(make([]string, 0, len(rootComps)+16), rootComps...),
-		t:     &t,
-		seen:  map[inode]struct{}{},
+		ctx:     ctx,
+		cfg:     c,
+		dev:     st.Dev,
+		rootLen: len(rootComps),
+		comps:   append(make([]string, 0, len(rootComps)+16), rootComps...),
+		t:       &t,
+		seen:    map[inode]struct{}{},
 	}
 	err = w.tree(root, st, 0, Other, true)
 	return t, err
@@ -134,11 +137,11 @@ func (w *walker) tree(dir *os.Root, own Stat, depth int, prof Profile, top bool)
 		if top {
 			return err
 		}
-		w.t.skip(contain.SkipReason(err))
+		w.cfg.fail(w.t, err, w.comps, w.rootLen)
 		return nil
 	}
 	if err != nil {
-		w.t.skip(contain.SkipReason(err))
+		w.cfg.fail(w.t, err, w.comps, w.rootLen)
 	}
 	if !w.cfg.Budget.Alive() {
 		return nil
@@ -169,7 +172,7 @@ func (w *walker) entry(dir *os.Root, name string, depth int, prof Profile) error
 	}
 	fi, err := dir.Lstat(name)
 	if err != nil {
-		w.t.skip(contain.SkipReason(err))
+		w.cfg.fail(w.t, err, w.comps, w.rootLen)
 		return nil
 	}
 	st, ok := w.cfg.stat(fi)
@@ -189,7 +192,7 @@ func (w *walker) entry(dir *os.Root, name string, depth int, prof Profile) error
 		}
 		child, err := contain.ChildWith(dir, name, fi)
 		if err != nil {
-			w.t.skip(contain.SkipReason(err))
+			w.cfg.fail(w.t, err, w.comps, w.rootLen)
 			return nil
 		}
 		defer child.Close()
