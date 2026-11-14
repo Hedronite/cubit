@@ -86,7 +86,7 @@ Served by `cubit serve` at `/metrics`:
 - **Sizes (gauges, bytes):** `cubit_workspace_target_bytes`, `cubit_workspace_profile_bytes`, `cubit_root_bytes`, `cubit_cache_bytes`.
 - **Counts (gauges):** `cubit_workspaces`, `cubit_workspaces_unlabeled{,_bytes}`, `cubit_skipped_entries`.
 - **Scan health (gauges and counters):** `cubit_scan_duration_seconds`, `cubit_scan_success`, `cubit_scan_partial`, `cubit_scan_last_success_timestamp_seconds`, `cubit_scan_errors_total`, `cubit_scans_total`.
-- **Build info:** `cubit_build_info`.
+- **Info (always 1):** `cubit_build_info`, `cubit_root_info{root,mode}`.
 
 Full table, label enums and semantics: [docs/metrics.md](docs/metrics.md). Values are base units — bytes and seconds, no MiB, no percentages.
 
@@ -117,5 +117,6 @@ Cubit feeds no screens of its own. The proposed mapping, frozen at C3: Vigil rea
 
 - [docs/metrics.md](docs/metrics.md) — the metric contract.
 - [docs/cli.md](docs/cli.md) — commands, flags, exit codes.
+- [docs/vigil.md](docs/vigil.md) — which metric and PromQL fills each field Vigil shows.
 - [docs/refuse-list.md](docs/refuse-list.md) — the built-in refuse list and containment.
 - [CONTRIBUTING.md](CONTRIBUTING.md) (DCO), [SECURITY.md](SECURITY.md).
