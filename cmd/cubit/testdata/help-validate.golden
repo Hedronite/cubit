@@ -1,0 +1,16 @@
+Check the config and report every problem at once, not just the first.
+
+Checks include duplicate aliases, nested or overlapping roots, a root
+inside a refused prefix, and two roots resolving to one real path.
+It also prints each root's resolved mode. The full list is in
+docs/config.md.
+
+Usage:
+  cubit validate [flags]
+
+Flags:
+  -h, --help   help for validate
+      --json   print findings as JSON
+
+Global Flags:
+      --config string   config file (default "cubit.yaml")

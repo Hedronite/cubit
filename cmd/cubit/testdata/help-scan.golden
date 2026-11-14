@@ -1,0 +1,12 @@
+Scan every configured root once, print the result, and exit.
+Human table by default; --json prints cubit.scan/v0 alone on stdout.
+
+Usage:
+  cubit scan [flags]
+
+Flags:
+  -h, --help   help for scan
+      --json   print cubit.scan/v0 instead of the human table
+
+Global Flags:
+      --config string   config file (default "cubit.yaml")
