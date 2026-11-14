@@ -134,6 +134,7 @@ jobs:
           ./promtool test rules examples/rules/cubit.rules.test.yml
           ./promtool check rules examples/rules/cubit-cron.rules.yml
           ./promtool test rules examples/rules/cubit-cron.rules.test.yml
+          ./promtool test rules testdata/vigil/queries.test.yml
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable

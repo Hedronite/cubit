@@ -1,0 +1,136 @@
+{
+  "hosts": [
+    {
+      "host": "edge",
+      "generated_at": "2026-01-15T12:05:00Z",
+      "roots": [
+        {
+          "alias": "example-cargo-home",
+          "mode": "cargo-home",
+          "bytes": 9000000000,
+          "success": true,
+          "partial": false,
+          "top": [],
+          "caches": [
+            {
+              "kind": "cargo-bin",
+              "bytes": 500000000
+            },
+            {
+              "kind": "git-checkouts",
+              "bytes": 2000000000
+            },
+            {
+              "kind": "git-db",
+              "bytes": 3000000000
+            },
+            {
+              "kind": "registry-cache",
+              "bytes": 2500000000
+            },
+            {
+              "kind": "registry-index",
+              "bytes": 500000000
+            },
+            {
+              "kind": "registry-src",
+              "bytes": 500000000
+            }
+          ]
+        },
+        {
+          "alias": "example-projects",
+          "mode": "workspace-root",
+          "bytes": 42000000000,
+          "success": true,
+          "partial": true,
+          "top": [
+            {
+              "name": "app-cli",
+              "bytes": 30000000000
+            },
+            {
+              "name": "libs/core",
+              "bytes": 11000000000
+            }
+          ],
+          "caches": []
+        },
+        {
+          "alias": "example-shared-target",
+          "mode": "target-dir",
+          "success": false,
+          "partial": false,
+          "top": [],
+          "caches": []
+        }
+      ]
+    },
+    {
+      "host": "lab",
+      "generated_at": "2026-01-15T12:00:00Z",
+      "roots": [
+        {
+          "alias": "example-cargo-home",
+          "mode": "cargo-home",
+          "bytes": 9000000000,
+          "success": true,
+          "partial": false,
+          "top": [],
+          "caches": [
+            {
+              "kind": "cargo-bin",
+              "bytes": 500000000
+            },
+            {
+              "kind": "git-checkouts",
+              "bytes": 2000000000
+            },
+            {
+              "kind": "git-db",
+              "bytes": 3000000000
+            },
+            {
+              "kind": "registry-cache",
+              "bytes": 2500000000
+            },
+            {
+              "kind": "registry-index",
+              "bytes": 500000000
+            },
+            {
+              "kind": "registry-src",
+              "bytes": 500000000
+            }
+          ]
+        },
+        {
+          "alias": "example-projects",
+          "mode": "workspace-root",
+          "bytes": 42000000000,
+          "success": true,
+          "partial": true,
+          "top": [
+            {
+              "name": "app-cli",
+              "bytes": 30000000000
+            },
+            {
+              "name": "libs/core",
+              "bytes": 11000000000
+            }
+          ],
+          "caches": []
+        },
+        {
+          "alias": "example-shared-target",
+          "mode": "target-dir",
+          "success": false,
+          "partial": false,
+          "top": [],
+          "caches": []
+        }
+      ]
+    }
+  ]
+}
