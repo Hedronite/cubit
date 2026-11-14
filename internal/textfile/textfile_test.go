@@ -618,3 +618,30 @@ func TestASymlinkToAFileIsNotADirectory(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+// The refusal Open returns keeps the list that refused, whichever of its checks
+// caught it: the one in front of the path, or the one inside contain.OpenRoot.
+func TestRefusalKeepsTheClassFromEveryCheck(t *testing.T) {
+	d := tmpdir(t)
+	cfgd := filepath.Join(d, "private")
+	if err := os.Mkdir(cfgd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ref := refuser(t, cfgd)
+
+	// The check inside OpenRoot, the one Open reaches after its own resolution.
+	_, _, err := contain.OpenRoot(cfgd, ref)
+	if re := refusal(err); re.Class != "config" || !errors.Is(re, ErrRefused) {
+		t.Errorf("a configured refusal from OpenRoot became class %q", re.Class)
+	}
+	_, _, err = contain.OpenRoot(filepath.Join(d, "x", ".ssh"), ref)
+	if re := refusal(err); re.Class != "builtin" {
+		t.Errorf("a built-in refusal from OpenRoot became class %q", re.Class)
+	}
+	// And through Open itself.
+	if _, err := Open(cfgd, "/h", ref); err == nil {
+		t.Fatal("a configured-refused directory opened")
+	} else if re := new(RefusedError); !errors.As(err, &re) || re.Class != "config" {
+		t.Errorf("Open: %v", err)
+	}
+}

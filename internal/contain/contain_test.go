@@ -193,6 +193,37 @@ func TestOpenRootRefusesAndResolves(t *testing.T) {
 	}
 }
 
+// OpenRoot says which list refused, so a caller can tell a built-in refusal from
+// one the operator configured, both for the named path and for where it resolves.
+func TestOpenRootReportsTheRefusingList(t *testing.T) {
+	base := mk(t)
+	write(t, filepath.Join(base, "x", ".ssh", "k"), 1)
+	write(t, filepath.Join(base, "private", "f"), 1)
+	if err := os.Symlink(filepath.Join(base, "private"), filepath.Join(base, "tolocked")); err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewRefuser("/nonexistent-home", []string{filepath.Join(base, "private")}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, class := range map[string]string{
+		filepath.Join(base, "x", ".ssh"): "builtin",
+		filepath.Join(base, "private"):   "config",
+	} {
+		_, _, err := OpenRoot(path, r)
+		var re *RefusedError
+		if !errors.Is(err, ErrRefused) || !errors.As(err, &re) || re.Class != class {
+			t.Errorf("%s: %v, want a %s refusal", filepath.Base(path), err, class)
+		}
+	}
+	// A link to a configured-refused directory is refused on the way, with that class.
+	_, _, err = OpenRoot(filepath.Join(base, "tolocked"), r)
+	var re *RefusedError
+	if !errors.As(err, &re) || re.Class != "config" {
+		t.Errorf("link into a configured-refused directory: %v", err)
+	}
+}
+
 func TestChild(t *testing.T) {
 	base := mk(t)
 	write(t, filepath.Join(base, "d", "f"), 1)

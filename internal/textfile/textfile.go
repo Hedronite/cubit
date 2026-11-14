@@ -103,6 +103,17 @@ type Writer struct {
 	Warnings []string
 }
 
+// refusal turns a refusal from the contain package into this package's own,
+// keeping the list that refused: "builtin" or "config".
+func refusal(err error) *RefusedError {
+	class := "builtin"
+	var cr *contain.RefusedError
+	if errors.As(err, &cr) {
+		class = cr.Class
+	}
+	return &RefusedError{Class: class}
+}
+
 // DirModeError carries the mode of an unsafe directory. It is ErrUnsafeDir.
 type DirModeError struct{ Mode fs.FileMode }
 
@@ -131,12 +142,7 @@ func Open(dir, home string, ref *contain.Refuser) (*Writer, error) {
 	if err != nil {
 		switch {
 		case errors.Is(err, contain.ErrRefused):
-			class := "builtin"
-			var cr *contain.RefusedError
-			if errors.As(err, &cr) {
-				class = cr.Class
-			}
-			return nil, &RefusedError{Class: class}
+			return nil, refusal(err)
 		case errors.Is(err, fs.ErrNotExist):
 			return nil, ErrNotExist
 		case errors.Is(err, syscall.ENOTDIR):
@@ -156,7 +162,7 @@ func Open(dir, home string, ref *contain.Refuser) (*Writer, error) {
 	if err != nil {
 		switch {
 		case errors.Is(err, contain.ErrRefused):
-			return nil, &RefusedError{Class: "builtin"}
+			return nil, refusal(err)
 		case errors.Is(err, fs.ErrPermission):
 			return nil, ErrNotWritable
 		}

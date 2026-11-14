@@ -30,20 +30,21 @@ var (
 // OpenRoot resolves path (absolute) through symlinks once, refuses it when the
 // resolved path, or any ancestor of it, is on the list, and opens it with
 // os.OpenRoot. A configured root that is itself a symlink is allowed: the
-// operator named it. The returned path is the resolved one.
+// operator named it. The returned path is the resolved one. A refusal is a
+// *RefusedError, so the caller learns which list refused.
 func OpenRoot(path string, r *Refuser) (*os.Root, string, error) {
 	if !filepath.IsAbs(path) {
 		return nil, "", fmt.Errorf("root path must be absolute: %w", fs.ErrInvalid)
 	}
-	if _, bad := r.Inside(Components(filepath.Clean(path))); bad {
-		return nil, "", ErrRefused
+	if class, bad := r.Inside(Components(filepath.Clean(path))); bad {
+		return nil, "", &RefusedError{Class: class}
 	}
 	real, err := ResolvePath(filepath.Clean(path), r)
 	if err != nil {
 		return nil, "", err
 	}
-	if _, bad := r.Inside(Components(real)); bad {
-		return nil, "", ErrRefused
+	if class, bad := r.Inside(Components(real)); bad {
+		return nil, "", &RefusedError{Class: class}
 	}
 	root, err := os.OpenRoot(real)
 	if err != nil {
