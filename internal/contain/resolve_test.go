@@ -189,7 +189,7 @@ func FuzzResolve(f *testing.F) {
 // FuzzRefuse: matching is per whole component. A name never matches an entry it
 // merely starts with, and an any-depth entry matches wherever it sits.
 func FuzzRefuse(f *testing.F) {
-	r, err := NewRefuser("/home/u", nil, "")
+	r, err := NewRefuser("/home/user", nil, "")
 	if err != nil {
 		f.Fatal(err)
 	}

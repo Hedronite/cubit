@@ -39,18 +39,18 @@ func TestBuiltinMatchesDoc(t *testing.T) {
 }
 
 func TestRefuser(t *testing.T) {
-	r, err := NewRefuser("/home/u", []string{"~/private", "/srv/extra"}, "/home/u/vault")
+	r, err := NewRefuser("/home/user", []string{"~/private", "/srv/extra"}, "/home/user/vault")
 	if err != nil {
 		t.Fatal(err)
 	}
 	yes := []string{
-		"/home/u/.ssh",
-		"/home/u/.SSH",
-		"/HOME/U/.ssh",
-		"/home/u/.cargo/credentials",
-		"/home/u/.cargo/credentials.toml",
-		"/home/u/Library/Mobile Documents",
-		"/home/u/library/mobile documents",
+		"/home/user/.ssh",
+		"/home/user/.SSH",
+		"/HOME/USER/.ssh",
+		"/home/user/.cargo/credentials",
+		"/home/user/.cargo/credentials.toml",
+		"/home/user/Library/Mobile Documents",
+		"/home/user/library/mobile documents",
 		"/etc/ssh",
 		"/proc",
 		"/Proc",
@@ -58,20 +58,20 @@ func TestRefuser(t *testing.T) {
 		"/srv/anywhere/deep/.aws",
 		"/srv/anywhere/.config/gh",
 		"/srv/anywhere/Library/Keychains",
-		"/home/u/private",
+		"/home/user/private",
 		"/srv/extra",
-		"/home/u/vault",
+		"/home/user/vault",
 	}
 	no := []string{
-		"/home/u/.sshfs",
-		"/home/u/ssh",
-		"/home/u/.cargo",
-		"/home/u/.cargo/registry",
-		"/home/u/.cargo/cred",
-		"/home/other/.cargo/config.toml", // ~/ entries are for this user's home only
+		"/home/user/.sshfs",
+		"/home/user/ssh",
+		"/home/user/.cargo",
+		"/home/user/.cargo/registry",
+		"/home/user/.cargo/cred",
+		"/home/name/.cargo/config.toml", // ~/ entries are for this user's home only
 		"/srv/proc",
 		"/etc",
-		"/home/u/private2",
+		"/home/user/private2",
 		"/srv/extra2",
 		"/srv/anywhere/.config/ghx",
 		"/srv/anywhere/config/gh",
@@ -89,11 +89,11 @@ func TestRefuser(t *testing.T) {
 }
 
 func TestInsideReportsClassNotPath(t *testing.T) {
-	r, _ := NewRefuser("/home/u", []string{"/srv/extra"}, "")
+	r, _ := NewRefuser("/home/user", []string{"/srv/extra"}, "")
 	for p, want := range map[string]string{
-		"/home/u/.ssh/keys/id": "builtin",
-		"/srv/extra/a/b":       "config",
-		"/srv/a/.docker/x/y/z": "builtin",
+		"/home/user/.ssh/keys/id": "builtin",
+		"/srv/extra/a/b":          "config",
+		"/srv/a/.docker/x/y/z":    "builtin",
 	} {
 		class, ok := r.Inside(Components(p))
 		if !ok || class != want {
@@ -106,8 +106,8 @@ func TestInsideReportsClassNotPath(t *testing.T) {
 }
 
 func TestUnderFindsAnchoredEntriesBelowARoot(t *testing.T) {
-	r, _ := NewRefuser("/home/u", []string{"/srv/p/secret"}, "")
-	got := r.Under(Components("/home/u"))
+	r, _ := NewRefuser("/home/user", []string{"/srv/p/secret"}, "")
+	got := r.Under(Components("/home/user"))
 	if len(got) != 1 || got[0] != "builtin" {
 		t.Errorf("home root: %v", got)
 	}
@@ -122,7 +122,7 @@ func TestUnderFindsAnchoredEntriesBelowARoot(t *testing.T) {
 
 func TestNewRefuserRejectsBadEntries(t *testing.T) {
 	for _, bad := range []string{"relative/path", "~/a/../b", "/"} {
-		if _, err := NewRefuser("/home/u", []string{bad}, ""); err == nil {
+		if _, err := NewRefuser("/home/user", []string{bad}, ""); err == nil {
 			t.Errorf("entry %q should be rejected", bad)
 		}
 	}

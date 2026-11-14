@@ -171,7 +171,7 @@ func FuzzConfigDecode(f *testing.F) {
 				t.Fatalf("caps out of range: %+v", r)
 			}
 		}
-		_ = Check(cfg, "/home/fuzz") // must never panic
+		_ = Check(cfg, "/home/user") // must never panic
 	})
 }
 

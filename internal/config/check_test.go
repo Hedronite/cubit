@@ -35,13 +35,13 @@ func tmpDir(t *testing.T) string {
 }
 
 func TestExpandPath(t *testing.T) {
-	for in, want := range map[string]string{"/a/b/": "/a/b", "~/x/y": "/home/u/x/y", "//a///b": "/a/b"} {
-		if got, err := ExpandPath(in, "/home/u"); err != nil || got != want {
+	for in, want := range map[string]string{"/a/b/": "/a/b", "~/x/y": "/home/user/x/y", "//a///b": "/a/b"} {
+		if got, err := ExpandPath(in, "/home/user"); err != nil || got != want {
 			t.Errorf("%q: %q %v", in, got, err)
 		}
 	}
 	for _, in := range []string{"/a/../b", "/a/./b", "~/../x", "rel/path", ""} {
-		if _, err := ExpandPath(in, "/home/u"); err == nil {
+		if _, err := ExpandPath(in, "/home/user"); err == nil {
 			t.Errorf("%q should be rejected", in)
 		}
 	}
@@ -66,7 +66,7 @@ roots:
   - {alias: secret, path: `+d+`/.ssh/ws, mode: workspace-root}
   - {alias: tilde, path: ~/x/../y, mode: sccache}
 `)
-	fs := Check(cfg, "/home/nobody")
+	fs := Check(cfg, "/home/user")
 	for _, want := range []struct{ sev, sub string }{
 		{Error, "scan.interval '10s' is below the 30s floor"},
 		{Error, "roots[1].alias 'one' is already used by roots[0]"},
