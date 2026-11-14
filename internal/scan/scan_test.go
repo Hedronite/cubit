@@ -681,7 +681,7 @@ func TestFromConfig(t *testing.T) {
 	if cfg == nil {
 		t.Fatalf("%+v", fs)
 	}
-	s, err := FromConfig(cfg, "/home/u")
+	s, err := FromConfig(cfg, "/home/user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -692,7 +692,7 @@ func TestFromConfig(t *testing.T) {
 	if a.DiscoveryDepth != 2 || a.Profiles || a.MaxFiles != 2_000_000 || a.MaxDuration != 30*time.Second || a.MaxWorkspaces != 64 {
 		t.Errorf("%+v", a)
 	}
-	if tt.Path != "/home/u/x" || tt.Name != "shared" || !tt.Profiles {
+	if tt.Path != "/home/user/x" || tt.Name != "shared" || !tt.Profiles {
 		t.Errorf("%+v", tt)
 	}
 }
