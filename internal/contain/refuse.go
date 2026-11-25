@@ -3,6 +3,9 @@ package contain
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"slices"
 	"strings"
 )
 
@@ -55,9 +58,10 @@ var Builtin = []string{
 // entry is one parsed refuse entry. comps are lowercased.
 type entry struct {
 	comps    []string
-	anyDepth bool   // a "**/" entry: match at any depth
-	glob     bool   // the last component is a prefix glob ("credentials*")
-	class    string // "builtin" or "config", for messages that must not name a path
+	spelled  []string // comps as written, for resolving symlinks
+	anyDepth bool     // a "**/" entry: match at any depth
+	glob     bool     // the last component is a prefix glob ("credentials*")
+	class    string   // "builtin" or "config", for messages that must not name a path
 }
 
 // Refuser matches paths against the built-in list plus configured additions.
@@ -70,6 +74,11 @@ type Refuser struct {
 
 // NewRefuser builds a Refuser. home is the invoking user's home directory
 // (absolute); extra and vault are the config's additions, each absolute or "~/…".
+//
+// An anchored entry is held in two forms: as written, and where it really is
+// once every symlink on the way to it is followed (realForm). Without the second
+// a symlinked prefix, such as a linked home directory, would let the walk reach
+// a refused place under its real name. The links are read once, here.
 func NewRefuser(home string, extra []string, vault string) (*Refuser, error) {
 	r := &Refuser{byLast: map[string][]*entry{}}
 	add := func(raw, class string) error {
@@ -77,13 +86,10 @@ func NewRefuser(home string, extra []string, vault string) (*Refuser, error) {
 		if err != nil {
 			return err
 		}
-		r.all = append(r.all, e)
-		if e.glob {
-			r.globs = append(r.globs, e)
-			return nil
+		r.insert(e)
+		if alias := e.resolved(); alias != nil {
+			r.insert(alias)
 		}
-		last := e.comps[len(e.comps)-1]
-		r.byLast[last] = append(r.byLast[last], e)
 		return nil
 	}
 	for _, raw := range Builtin {
@@ -102,6 +108,96 @@ func NewRefuser(home string, extra []string, vault string) (*Refuser, error) {
 		}
 	}
 	return r, nil
+}
+
+func (r *Refuser) insert(e *entry) {
+	r.all = append(r.all, e)
+	if e.glob {
+		r.globs = append(r.globs, e)
+		return
+	}
+	last := e.comps[len(e.comps)-1]
+	r.byLast[last] = append(r.byLast[last], e)
+}
+
+// resolved is the entry as it really is on disk, or nil when that is the same
+// as how it was written. A "**/" entry has no place to resolve. A glob keeps its
+// last component and resolves the directory holding it.
+func (e *entry) resolved() *entry {
+	if e.anyDepth {
+		return nil
+	}
+	spelled := e.spelled
+	if e.glob {
+		spelled = spelled[:len(spelled)-1]
+	}
+	real, ok := realForm(spelled)
+	if !ok {
+		return nil
+	}
+	comps := make([]string, 0, len(real)+1)
+	for _, c := range real {
+		comps = append(comps, strings.ToLower(c))
+	}
+	if e.glob {
+		comps = append(comps, e.comps[len(e.comps)-1])
+	}
+	// An entry that leads to the filesystem root itself has no components to
+	// match; the written form still refuses the link.
+	if len(comps) == 0 || slices.Equal(comps, e.comps) {
+		return nil
+	}
+	return &entry{comps: comps, glob: e.glob, class: e.class}
+}
+
+// realForm follows every symlink on the absolute path given as components. From
+// the first component that does not exist, or cannot be looked at, the rest is
+// taken as written, so an entry that is not there yet still resolves as far as
+// it can. It reads link metadata and link targets only: nothing is opened, and
+// nothing below the entry is touched. ok is false for a symlink loop.
+func realForm(comps []string) (real []string, ok bool) {
+	pending := append([]string(nil), comps...)
+	hops, missing := 0, false
+	for len(pending) > 0 {
+		c := pending[0]
+		pending = pending[1:]
+		switch c {
+		case "", ".":
+			continue
+		case "..":
+			if len(real) > 0 {
+				real = real[:len(real)-1]
+			}
+			continue
+		}
+		real = append(real, c)
+		if missing {
+			continue
+		}
+		p := "/" + strings.Join(real, "/")
+		fi, err := os.Lstat(p)
+		if err != nil {
+			missing = true
+			continue
+		}
+		if fi.Mode()&fs.ModeSymlink == 0 {
+			continue
+		}
+		link, err := os.Readlink(p)
+		if err != nil {
+			missing = true
+			continue
+		}
+		if hops++; hops > MaxHops {
+			return nil, false
+		}
+		real = real[:len(real)-1]
+		if strings.HasPrefix(link, "/") {
+			real = real[:0] // an absolute link starts again from the root
+		}
+		pending = append(strings.Split(link, "/"), pending...)
+	}
+	return real, true
 }
 
 func parseEntry(raw, home, class string) (*entry, error) {
@@ -128,6 +224,7 @@ func parseEntry(raw, home, class string) (*entry, error) {
 		if c == "." || c == ".." {
 			return nil, fmt.Errorf("refuse entry %q holds a . or .. component", raw)
 		}
+		e.spelled = append(e.spelled, c)
 		e.comps = append(e.comps, strings.ToLower(c))
 	}
 	if len(e.comps) == 0 {

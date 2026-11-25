@@ -44,8 +44,9 @@ type ResolvedRoot struct {
 }
 
 // Check runs the checks a schema cannot, all at once. It reads the filesystem
-// only to resolve symlinks and to see whether a root exists; it never reads a
-// refused path. home is the invoking user's home directory. No message holds a
+// only to resolve symlinks (including those on the way to each refuse entry,
+// see contain.NewRefuser) and to see whether a root exists; it never reads what
+// a refused path holds. home is the invoking user's home directory. No message holds a
 // refused location, only its class.
 func Check(c *Config, home string) []Finding {
 	var fs []Finding

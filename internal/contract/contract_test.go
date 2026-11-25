@@ -757,3 +757,41 @@ func TestExamplesNameTheirVersionApiVersion(t *testing.T) {
 		}
 	}
 }
+
+// The header fields are admitted, not required, and strictly typed.
+func TestHeaderFieldsInSchemas(t *testing.T) {
+	scan := compile(t, "cubit.scan.v0.schema.json")
+	base := decodeJSON(t, read(t, "examples/scan.json"))
+	for name, mutate := range map[string]func(map[string]any){
+		"duration valid_for":   func(m map[string]any) { m["valid_for"] = "60s" },
+		"zero valid_for":       func(m map[string]any) { m["valid_for"] = 0 },
+		"fractional valid_for": func(m map[string]any) { m["valid_for"] = 1.5 },
+		"string observed":      func(m map[string]any) { m["observed"] = "true" },
+		"short declaration":    func(m map[string]any) { m["declaration"] = "sha256:abc" },
+		"numeric declaration":  func(m map[string]any) { m["declaration"] = 7 },
+	} {
+		m := clone(t, base)
+		mutate(m)
+		if err := scan.Validate(asJSON(t, m)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	old := clone(t, base)
+	for _, k := range []string{"observed", "valid_for", "declaration"} {
+		if _, ok := old[k]; !ok {
+			t.Errorf("the example lacks %s", k)
+		}
+		delete(old, k)
+	}
+	if err := scan.Validate(asJSON(t, old)); err != nil {
+		t.Errorf("a document without the header fields must still validate: %v", err)
+	}
+	config := compile(t, "cubit.config.v0.schema.json")
+	for value, ok := range map[any]bool{nil: true, "sha256:" + strings.Repeat("c", 64): true, "sha256:abc": false, "": false} {
+		m := decodeYAML(t, read(t, "examples/cubit.yaml"))
+		m["declaration"] = value
+		if err := config.Validate(asJSON(t, m)); (err == nil) != ok {
+			t.Errorf("declaration %v: %v", value, err)
+		}
+	}
+}

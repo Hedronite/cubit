@@ -144,6 +144,7 @@ func errReason(err error) string {
 func scanCmd(configFile *string, stdout, stderr io.Writer) *cobra.Command {
 	var asJSON bool
 	var textfileDir string
+	var validFor int
 	c := &cobra.Command{
 		Use:   "scan",
 		Short: "Scan configured roots once and print the result",
@@ -151,9 +152,14 @@ func scanCmd(configFile *string, stdout, stderr io.Writer) *cobra.Command {
 Human table by default; --json prints cubit.scan/v0 alone on stdout.
 With --textfile-dir DIR, also write cubit.prom (node_exporter
 textfile format) after the scan. The directory must already exist
-and sit outside the refuse list; Cubit never creates it.`,
+and sit outside the refuse list; Cubit never creates it.
+The document says how long it stands (valid_for, --valid-for, whole
+seconds) and carries the config's declaration, or null.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if validFor < 1 {
+				return usageErr("--valid-for must be a whole number of seconds, at least 1")
+			}
 			cfg, _, err := load(*configFile, stderr, false)
 			if err != nil {
 				return err
@@ -162,6 +168,7 @@ and sit outside the refuse list; Cubit never creates it.`,
 			if err != nil {
 				return &exitError{exitConfig, err.Error()}
 			}
+			spec.ValidFor = validFor
 			var tw *textfile.Writer
 			if textfileDir != "" {
 				if tw, err = openTextfile(textfileDir, spec, exitConfig); err != nil {
@@ -211,6 +218,7 @@ and sit outside the refuse list; Cubit never creates it.`,
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "print cubit.scan/v0 instead of the human table")
 	c.Flags().StringVar(&textfileDir, "textfile-dir", "", "write cubit.prom into `DIR` after the scan (node_exporter textfile format)")
+	c.Flags().IntVar(&validFor, "valid-for", scan.DefaultValidFor, "whole `SECONDS` the document stands for (valid_for), at least 1")
 	return c
 }
 

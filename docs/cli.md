@@ -44,18 +44,23 @@ Human table by default; --json prints cubit.scan/v0 alone on stdout.
 With --textfile-dir DIR, also write cubit.prom (node_exporter
 textfile format) after the scan. The directory must already exist
 and sit outside the refuse list; Cubit never creates it.
+The document says how long it stands (valid_for, --valid-for, whole
+seconds) and carries the config's declaration, or null.
 
 Usage:
   cubit scan [flags]
 
 Flags:
-  -h, --help               help for scan
-      --json               print cubit.scan/v0 instead of the human table
-      --textfile-dir DIR   write cubit.prom into DIR after the scan (node_exporter textfile format)
+  -h, --help                help for scan
+      --json                print cubit.scan/v0 instead of the human table
+      --textfile-dir DIR    write cubit.prom into DIR after the scan (node_exporter textfile format)
+      --valid-for SECONDS   whole SECONDS the document stands for (valid_for), at least 1 (default 1800)
 
 Global Flags:
       --config string   config file (default "cubit.yaml")
 ```
+
+With `--json` the document carries three header fields: `observed` (`true` when at least one root was usable; `false` goes with exit 2), `valid_for` (whole seconds the document stands: `--valid-for`, default 1800, the staleness threshold of the example cron rules; `serve` uses twice `scan.interval`) and `declaration` (the config's `declaration`, or `null`).
 
 Sample human table for `examples/scan.json`. Roots follow the document order (by alias); workspaces and caches are biggest first, ties by name. `BYTES` is exact; `SIZE` is a rounded reading aid.
 

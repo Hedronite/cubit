@@ -85,7 +85,7 @@ $ cubit scan --config cubit.yaml --json    # cubit.scan/v0 on stdout
 
 Byte counts depend on filesystem block size; the output above is from a real run. `SIZE` is a rounded reading aid (base 1024); `BYTES` and the JSON carry the exact number. Every alias and path in this README is synthetic; real deployments name roots with slugs, never filesystem paths.
 
-For scripted use: `cubit scan --json` prints the `cubit.scan/v0` document alone on stdout (schema in [`schemas/cubit.scan.v0.schema.json`](schemas/cubit.scan.v0.schema.json)); `cubit validate --json` prints the `cubit.validate/v0` document. See [docs/cli.md](docs/cli.md) for every command and flag, and [docs/config.md](docs/config.md) for every config key and finding code.
+For scripted use: `cubit scan --json` prints the `cubit.scan/v0` document alone on stdout, saying whether any root was `observed`, how long it stands (`valid_for`, `--valid-for SECONDS`) and which `declaration` configured it (schema in [`schemas/cubit.scan.v0.schema.json`](schemas/cubit.scan.v0.schema.json)); `cubit validate --json` prints the `cubit.validate/v0` document. See [docs/cli.md](docs/cli.md) for every command and flag, and [docs/config.md](docs/config.md) for every config key and finding code.
 
 ### Exit codes
 

@@ -43,6 +43,12 @@ type Options struct {
 	OnScan func(*scan.Document)
 }
 
+// validFor is a served scan's valid_for: twice the interval in whole seconds,
+// at least 1.
+func validFor(interval time.Duration) int {
+	return int(max(2*interval/time.Second, 1))
+}
+
 // Jitter is the default wait: interval plus or minus 10%.
 func Jitter(interval time.Duration) time.Duration {
 	f := 0.9 + rand.Float64()*0.2 //nolint:gosec // jitter, not a secret
@@ -54,6 +60,7 @@ func Jitter(interval time.Duration) time.Duration {
 // *ListenError. The listener opens before the first scan so a bad bind fails
 // at once.
 func Run(ctx context.Context, o Options) error {
+	o.Spec.ValidFor = validFor(o.Interval)
 	if err := CheckBind(ctx, o.Addr, o.Unsafe); err != nil {
 		return err
 	}

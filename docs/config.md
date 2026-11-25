@@ -8,10 +8,11 @@ Cubit reads one YAML file, `cubit.config/v0`. It is decoded strictly: an unknown
 |---|---|---|
 | `apiVersion` | required | Must be `cubit.config/v0`. The version key is `apiVersion` in all three documents (`cubit.config/v0`, `cubit.scan/v0`, `cubit.validate/v0`); the older `schema` is an unknown key. |
 | `host` | none | A slug for the `host` field of the scan document. Never read from the OS. There is no `host` label. |
+| `declaration` | none | `sha256:` and 64 lowercase hex digits, or `null`. Copied verbatim into every scan document; `null` there means undeclared. |
 | `scan.interval` | `5m` | Time between scans in `serve`, with 10% jitter either way. At least `30s`. |
 | `scan.max_workers` | min(4, GOMAXPROCS) | Concurrent walkers. IO bound, so more is rarely better. |
 | `refuse.vault` | none | A vault prefix to refuse, reported by alias only. |
-| `refuse.extra` | none | More refused prefixes. They only add to [the built-in list](refuse-list.md). |
+| `refuse.extra` | none | More refused prefixes. They only add to [the built-in list](refuse-list.md), and are matched both as written and with symlinks resolved. |
 | `roots` | required | One to 32 roots. |
 
 ## Roots

@@ -2,6 +2,19 @@
 
 All notable changes to Cubit. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). Before 1.0 the three document contracts (`cubit.config/v0`, `cubit.scan/v0`, `cubit.validate/v0`) and the metric names change only by addition.
 
+## Unreleased
+
+A consumer that validates documents against a pinned copy of the schemas must refresh it before taking this release: the scan document has new fields.
+
+### Added
+
+- The scan document carries `observed`, `valid_for` (`cubit scan --valid-for SECONDS`, default 1800; `serve` uses twice `scan.interval`) and `declaration`. The config takes an optional `declaration: sha256:<64 hex>` or `null`.
+
+### Fixed
+
+- A refuse entry spelled through a symlink (`/tmp` on macOS, a linked home directory, a linked parent) did not match the real path the walk reads, so the refused subtree was measured. Entries are now matched both as written and resolved.
+- A cancelled scan was noticed only every 256 entries, so a tree of small directories ran to the end. Cancel is now checked before every entry and directory.
+
 ## v0.1.0
 
 The first release. Cubit measures Cargo disk use on build hosts and exports it as Prometheus metrics. It measures; it never cleans.

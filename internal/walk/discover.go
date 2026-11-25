@@ -81,6 +81,9 @@ func (d *discoverer) read(dir *os.Root) ([]fs.DirEntry, error) {
 	defer f.Close()
 	var ents []fs.DirEntry
 	for {
+		if err := d.ctx.Err(); err != nil {
+			return nil, err
+		}
 		chunk, err := f.ReadDir(readChunk)
 		if len(chunk) > 0 {
 			ents = append(ents, chunk...)
@@ -101,7 +104,13 @@ func (d *discoverer) read(dir *os.Root) ([]fs.DirEntry, error) {
 }
 
 func (d *discoverer) dir(dir *os.Root, rel []string, depth int, top bool) error {
+	if err := d.ctx.Err(); err != nil {
+		return err
+	}
 	ents, err := d.read(dir)
+	if cerr := d.ctx.Err(); cerr != nil {
+		return cerr
+	}
 	if err != nil && len(ents) == 0 {
 		if top {
 			return err
@@ -122,13 +131,11 @@ func (d *discoverer) dir(dir *os.Root, rel []string, depth int, top bool) error 
 		return nil
 	}
 	for i, ent := range ents {
-		if i&255 == 255 {
-			if err := d.ctx.Err(); err != nil {
-				return err
-			}
-			if !d.cfg.Budget.Alive() {
-				return nil
-			}
+		if err := d.ctx.Err(); err != nil {
+			return err
+		}
+		if i&255 == 255 && !d.cfg.Budget.Alive() {
+			return nil
 		}
 		name := ent.Name()
 		if !ent.IsDir() || skipWalk[name] {

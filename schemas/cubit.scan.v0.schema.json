@@ -21,6 +21,20 @@
       "type": "string",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
     },
+    "observed": {
+      "description": "Whether at least one configured root was observed. False when none was usable (exit 2): the document carries no first-hand observation of its subjects.",
+      "type": "boolean"
+    },
+    "valid_for": {
+      "description": "How long the producer stands behind the document, in integer seconds (>= 1). serve: twice scan.interval; scan: --valid-for, default 1800.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "declaration": {
+      "description": "SHA-256 digest of the canonical watch declaration, or null when undeclared.",
+      "type": ["string", "null"],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
     "host": {
       "description": "From config or flag. Never os.Hostname(). Omitted when unset.",
       "type": "string",

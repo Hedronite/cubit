@@ -9,8 +9,9 @@ Paths Cubit will not read, whatever the config says. A refused path is skipped a
   - `~/...` is below the home directory of the user running Cubit.
   - `/...` is an absolute prefix.
   - `**/...` matches at any depth under a root. It exists because a root outside `~` (for example a scan run as another user, or a copied home) would otherwise reach a `.ssh` that no `~/` entry names.
+- **Symlinks on the way to an entry are followed.** An anchored entry (`~/...` or `/...`) is matched both as written and where it really is: every symlink on its path, the last component included, is resolved when the config is loaded. So an entry under a linked home directory, under a linked parent, or under a system directory that is itself a link (`/tmp` and `/etc` on macOS) refuses the real place too. The part of an entry that does not exist yet is kept as written, below whatever of it resolved. For a `credentials*` glob the directory holding it is resolved. `serve` resolves once, at startup: after moving or re-pointing a link, restart it.
 - The check runs on **every directory entry during the walk**, not only at the roots. A root at `~` is legal and the walk will not descend into `~/.ssh`.
-- **Refused paths are never opened or statted.** The walker opens directories and takes sizes from `fstatat`. Refusal stops it descending into a directory or reading an entry's metadata at all, so a refused name cannot reach a report or a byte total.
+- **Refused paths are never opened, and the walk never stats one.** The walker opens directories and takes sizes from `fstatat`. Refusal stops it descending into a directory or reading an entry's metadata at all, so a refused name cannot reach a report or a byte total. The one look Cubit takes is at config load, to learn where an entry really is: it reads link metadata and link targets along the entry's own path, opens nothing and reads nothing below it.
 - The list applies on linux and darwin alike. An entry for a path that does not exist on the host is harmless.
 
 ## Built-in entries

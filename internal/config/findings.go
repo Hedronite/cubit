@@ -71,7 +71,7 @@ var Codes = []string{
 
 // Keys by place. A key valid in one root mode and not another is key_for_mode.
 var (
-	topKeys    = []string{"apiVersion", "host", "scan", "refuse", "roots"}
+	topKeys    = []string{"apiVersion", "host", "declaration", "scan", "refuse", "roots"}
 	scanKeys   = []string{"interval", "max_workers"}
 	refuseKeys = []string{"vault", "extra"}
 	rootKeys   = []string{"alias", "path", "mode", "max_files", "max_duration"}
@@ -251,6 +251,8 @@ func patternFinding(mk func(code, fld, message, fix string) Finding, field, name
 	switch {
 	case names:
 		return mk(CodeNamesKey, field, fmt.Sprintf("%s: the key '%s' is not a usable relative path", field, val), "write the workspace's path under the root as on disk, with no '.' or '..' parts and no leading or trailing '/'.")
+	case ptr == "/declaration":
+		return mk(CodeInvalidValue, field, field+" is not a sha256: digest of 64 lowercase hex digits", "write the digest, write null, or remove the key.")
 	case name == "interval" || name == "max_duration":
 		return mk(CodeBadDuration, field, fmt.Sprintf("%s '%s' is not a duration", field, val), "write a duration like 30s, 5m, 1h30m: whole numbers, no spaces or words.")
 	case name == "path" || name == "vault" || strings.Contains(ptr, "/extra/"):
