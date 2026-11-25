@@ -2,7 +2,7 @@
 
 All notable changes to Cubit. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). Before 1.0 the three document contracts (`cubit.config/v0`, `cubit.scan/v0`, `cubit.validate/v0`) and the metric names change only by addition.
 
-## Unreleased
+## v0.1.1
 
 A consumer that validates documents against a pinned copy of the schemas must refresh it before taking this release: the scan document has new fields.
 
@@ -12,8 +12,12 @@ A consumer that validates documents against a pinned copy of the schemas must re
 
 ### Fixed
 
-- A refuse entry spelled through a symlink (`/tmp` on macOS, a linked home directory, a linked parent) did not match the real path the walk reads, so the refused subtree was measured. Entries are now matched both as written and resolved.
+- A refuse entry spelled through a symlink (`/tmp` on macOS, a linked home directory, a linked parent) did not match the real path the walk reads, so the refused subtree was measured. Entries are now matched both as written and resolved. To learn where an entry leads, Cubit reads the links along it when the config is loaded; it still never opens a refused path.
 - A cancelled scan was noticed only every 256 entries, so a tree of small directories ran to the end. Cancel is now checked before every entry and directory.
+
+### Changed
+
+- Because refuse entries are now resolved, a root that sits where a refused symlink leads is refused where it was accepted before; `cubit validate` says so. `serve` resolves links once, at startup: restart it after re-pointing one.
 
 ## v0.1.0
 
