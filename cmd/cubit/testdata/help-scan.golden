@@ -3,14 +3,17 @@ Human table by default; --json prints cubit.scan/v0 alone on stdout.
 With --textfile-dir DIR, also write cubit.prom (node_exporter
 textfile format) after the scan. The directory must already exist
 and sit outside the refuse list; Cubit never creates it.
+The document says how long it stands (valid_for, --valid-for, whole
+seconds) and carries the config's declaration, or null.
 
 Usage:
   cubit scan [flags]
 
 Flags:
-  -h, --help               help for scan
-      --json               print cubit.scan/v0 instead of the human table
-      --textfile-dir DIR   write cubit.prom into DIR after the scan (node_exporter textfile format)
+  -h, --help                help for scan
+      --json                print cubit.scan/v0 instead of the human table
+      --textfile-dir DIR    write cubit.prom into DIR after the scan (node_exporter textfile format)
+      --valid-for SECONDS   whole SECONDS the document stands for (valid_for), at least 1 (default 1800)
 
 Global Flags:
       --config string   config file (default "cubit.yaml")

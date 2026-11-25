@@ -193,10 +193,44 @@ func FuzzRefuse(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
-	for _, s := range []string{".ssh", ".sshfs", ".SSH", "a/.aws", "credentials.toml", "x\xffy", "Library/Keychains", ""} {
+	for _, s := range []string{".ssh", ".sshfs", ".SSH", "a/.aws", "credentials.toml", "x\xffy", "Library/Keychains", "",
+		"secret", "SECRET/x", "tgt/secret", "a/../b", "./deep//er", "later/tail", "credentials", "...", "sibling"} {
 		f.Add(s)
 	}
+	// Entries written through symlinks: whatever is below one spelling is below
+	// the other.
+	base, err := filepath.EvalSymlinks(f.TempDir())
+	if err != nil {
+		f.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(base, "real", "secret"), 0o755); err != nil {
+		f.Fatal(err)
+	}
+	for name, target := range map[string]string{"link": "real", "chain": "link", "dangling": "real/later"} {
+		if err := os.Symlink(target, filepath.Join(base, name)); err != nil {
+			f.Fatal(err)
+		}
+	}
+	linked, err := NewRefuser(filepath.Join(base, "link"), []string{
+		filepath.Join(base, "chain", "secret"), filepath.Join(base, "dangling"), "~/notyet",
+	}, "")
+	if err != nil {
+		f.Fatal(err)
+	}
+	pairs := [][2]string{
+		{filepath.Join(base, "chain", "secret"), filepath.Join(base, "real", "secret")},
+		{filepath.Join(base, "dangling"), filepath.Join(base, "real", "later")},
+		{filepath.Join(base, "link", "notyet"), filepath.Join(base, "real", "notyet")},
+	}
 	f.Fuzz(func(t *testing.T, rel string) {
+		for _, p := range pairs {
+			for _, spelling := range p {
+				below := append(Components(spelling), Components(rel)...)
+				if _, bad := linked.Inside(below); !bad {
+					t.Fatalf("%q below %q is not refused", rel, spelling)
+				}
+			}
+		}
 		comps := Components("/srv/work/" + rel)
 		got := r.Refused(comps) // must never panic
 		last := ""

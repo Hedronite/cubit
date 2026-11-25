@@ -15,6 +15,9 @@ const APIVersion = "cubit.scan/v0"
 type Document struct {
 	APIVersion  string    `json:"apiVersion"`
 	GeneratedAt string    `json:"generated_at"`
+	Observed    bool      `json:"observed"`    // at least one root was usable
+	ValidFor    int       `json:"valid_for"`   // seconds the producer stands behind the document, >= 1
+	Declaration *string   `json:"declaration"` // from the config; null when undeclared
 	Host        string    `json:"host,omitempty"`
 	Roots       []Root    `json:"roots"`
 	Caps        DocCaps   `json:"caps"`

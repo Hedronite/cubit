@@ -21,6 +21,9 @@ import (
 const (
 	DefaultDepthGuard = config.DepthGuard
 	DefaultDedupeMax  = 1 << 20
+	// DefaultValidFor is how many seconds a one-shot scan's document stands:
+	// the staleness threshold of the example cron-mode rules.
+	DefaultValidFor = 1800
 )
 
 // RootSpec is one root, ready to scan: its path expanded and every default applied.
@@ -39,7 +42,11 @@ type RootSpec struct {
 
 // Spec is everything Scan needs.
 type Spec struct {
-	Host       string
+	Host        string
+	Declaration *string
+	// ValidFor is the document's valid_for in seconds; zero means
+	// DefaultValidFor.
+	ValidFor   int
 	Roots      []RootSpec
 	Workers    int
 	Refuse     *contain.Refuser
@@ -60,7 +67,7 @@ func FromConfig(c *config.Config, home string) (Spec, error) {
 	if err != nil {
 		return Spec{}, err
 	}
-	s := Spec{Host: c.Host, Workers: c.EffectiveWorkers(), Refuse: ref, DepthGuard: DefaultDepthGuard, DedupeMax: DefaultDedupeMax}
+	s := Spec{Host: c.Host, Declaration: c.Declaration, Workers: c.EffectiveWorkers(), Refuse: ref, DepthGuard: DefaultDepthGuard, DedupeMax: DefaultDedupeMax}
 	for i := range c.Roots {
 		r := &c.Roots[i]
 		abs, err := config.ExpandPath(r.Path, home)
@@ -92,6 +99,9 @@ func Scan(ctx context.Context, spec Spec, env Env) (*Document, error) {
 	if spec.DedupeMax == 0 {
 		spec.DedupeMax = DefaultDedupeMax
 	}
+	if spec.ValidFor < 1 {
+		spec.ValidFor = DefaultValidFor
+	}
 	if spec.Workers < 1 {
 		spec.Workers = 1
 	}
@@ -99,11 +109,13 @@ func Scan(ctx context.Context, spec Spec, env Env) (*Document, error) {
 	sort.SliceStable(roots, func(i, j int) bool { return roots[i].Alias < roots[j].Alias })
 
 	doc := &Document{
-		APIVersion: APIVersion,
-		Host:       spec.Host,
-		Roots:      []Root{},
-		Warnings:   []Warning{},
-		Caps:       DocCaps{MaxWorkers: spec.Workers, DepthGuard: spec.DepthGuard},
+		APIVersion:  APIVersion,
+		ValidFor:    spec.ValidFor,
+		Declaration: spec.Declaration,
+		Host:        spec.Host,
+		Roots:       []Root{},
+		Warnings:    []Warning{},
+		Caps:        DocCaps{MaxWorkers: spec.Workers, DepthGuard: spec.DepthGuard},
 	}
 	claimed := map[inode]bool{}
 	for _, rs := range roots {
@@ -119,6 +131,7 @@ func Scan(ctx context.Context, spec Spec, env Env) (*Document, error) {
 	for i := range doc.Roots {
 		if doc.Roots[i].Success {
 			doc.Roots[i].LastSuccessAt = now
+			doc.Observed = true
 		}
 	}
 	sort.SliceStable(doc.Warnings, func(i, j int) bool {

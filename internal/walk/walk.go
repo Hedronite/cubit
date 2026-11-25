@@ -110,6 +110,9 @@ func (w *walker) listing(dir *os.Root) ([]string, error) {
 	defer f.Close()
 	var names []string
 	for {
+		if err := w.ctx.Err(); err != nil {
+			return nil, err
+		}
 		chunk, err := f.Readdirnames(readChunk)
 		if len(chunk) > 0 {
 			names = append(names, chunk...)
@@ -132,7 +135,14 @@ func (w *walker) listing(dir *os.Root) ([]string, error) {
 // tree reads dir, adds its own inode once the listing worked, and recurses. top
 // marks the unit's root, whose listing failure is the caller's to report.
 func (w *walker) tree(dir *os.Root, own Stat, depth int, prof Profile, top bool) error {
+	if err := w.ctx.Err(); err != nil {
+		return err
+	}
 	names, err := w.listing(dir)
+	// A cancel during the listing is a cancel, not an unreadable directory.
+	if cerr := w.ctx.Err(); cerr != nil {
+		return cerr
+	}
 	if err != nil && len(names) == 0 {
 		if top {
 			return err
@@ -148,13 +158,13 @@ func (w *walker) tree(dir *os.Root, own Stat, depth int, prof Profile, top bool)
 	}
 	w.add(own, prof)
 	for i, name := range names {
-		if i&255 == 255 {
-			if err := w.ctx.Err(); err != nil {
-				return err
-			}
-			if !w.cfg.Budget.Alive() {
-				return nil
-			}
+		// Cancel is checked before every entry; the budget reads the clock, so
+		// it is checked less often.
+		if err := w.ctx.Err(); err != nil {
+			return err
+		}
+		if i&255 == 255 && !w.cfg.Budget.Alive() {
+			return nil
 		}
 		if err := w.entry(dir, name, depth, prof); err != nil {
 			return err
